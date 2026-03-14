@@ -1,3 +1,3 @@
 # chulis
 game
-https://aahigh.github.io/chulis
+https://aahigh.github.io/chulis/
