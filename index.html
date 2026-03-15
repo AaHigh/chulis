@@ -8,84 +8,94 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>LA CHULIS</title>
 <style>
-  * { margin:0; padding:0; box-sizing:border-box; }
-  html, body { width:100%; height:100%; background:#000; overflow:hidden;
-    touch-action:none; -webkit-user-select:none; user-select:none; }
-  canvas { display:block; position:fixed; top:0; left:0; }
+* { margin:0; padding:0; box-sizing:border-box; }
+html, body {
+  width:100%; height:100%;
+  background:#000;
+  overflow:hidden;
+  touch-action:none;
+  -webkit-user-select:none;
+  user-select:none;
+}
+canvas {
+  display:block;
+  position:fixed;
+  top:0; left:0;
+  width:100% !important;
+  height:100% !important;
+}
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
 <script>
-// ═══════════════════════════════════════════════════════════════
-//  LA CHULIS — Pure Canvas, 120fps rAF, all UI drawn in code
-//  Touch/click via coordinate hit-test on registered rects
-// ═══════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════
+//  LA CHULIS — Safari-hardened pure canvas game
+//  * No setTransform before loop start
+//  * DPR scaling via cx.save/cx.scale each frame
+//  * All UI drawn via Canvas2D, hit-test via rect array
+//  * rAF loop, 120fps on ProMotion
+// ════════════════════════════════════════════════════════
 
 const cv = document.getElementById(‘c’);
-const cx = cv.getContext(‘2d’, { alpha: false });
+const cx = cv.getContext(‘2d’);   // no alpha:false — safer on Safari
 
-// ── Viewport ────────────────────────────────────────────────────
-let W, H, DPR, SC; // SC = scale factor from 390pt base
+let W = 0, H = 0, DPR = 1, SC = 1;
 
 function resize() {
 DPR = Math.min(window.devicePixelRatio || 1, 3);
 W = window.innerWidth;
 H = window.innerHeight;
+// Set backing store size
 cv.width  = Math.round(W * DPR);
 cv.height = Math.round(H * DPR);
+// CSS size always fills viewport
 cv.style.width  = W + ‘px’;
 cv.style.height = H + ‘px’;
-ctx_reset_scale();
+// Scale factor: design base 390×844 (iPhone 14)
 SC = Math.min(W / 390, H / 844);
 }
 
-function ctx_reset_scale() {
-cx.setTransform(DPR, 0, 0, DPR, 0, 0);
-}
-
-resize();
-window.addEventListener(‘resize’, () => { resize(); });
-
-// ── Scale helper ────────────────────────────────────────────────
+// Scale helper
 const s = v => v * SC;
 
-// ── Colors ──────────────────────────────────────────────────────
+// ── Colors ──────────────────────────────────────────────
 const BG    = ‘#120701’;
 const CREAM = ‘#f5ead8’;
 const GOLD  = ‘#d4a017’;
-const GOLDD = ‘#8a6510’;
+const GOLDD = ‘#6a4a08’;
 const RED   = ‘#c0392b’;
 const STEAM = ‘#9a8878’;
 const GREEN = ‘#39ff14’;
 const PURP  = ‘#bf7fff’;
-const DARK  = ‘#0a0402’;
+const DARK  = ‘#080300’;
 const RISK_C = [GREEN, GOLD, RED, PURP];
-const RISK_L = [‘🟢 LOW’, ‘🟡 MEDIUM’, ‘🔴 HIGH’, ‘🟣 WILD’];
+const RISK_L = [‘LOW RISK’, ‘MEDIUM’, ‘HIGH RISK’, ‘WILDCARD’];
+const RISK_E = [‘🟢’, ‘🟡’, ‘🔴’, ‘🟣’];
 
-// ── Game Scenes ─────────────────────────────────────────────────
+// ── Scenes ──────────────────────────────────────────────
 const SCENES = [
 {
 loc:‘THE ENTRANCE’, emj:‘🚪’,
-sign:’“La vida es corta, cómete una torta”’,
+sign:’“La vida es corta, comete una torta”’,
 lines:[
 ‘You pull into 802 Navajo Rd. Strip mall.’,
-‘The sign: EL RINCÓN LA CHULIS.’,
+‘The sign: EL RINCON LA CHULIS.’,
 ‘A woman at the counter looks up briefly.’,
 ‘CNN alert: “CJNG Boss El Mencho's Daughter’,
 ‘Located in Perris, CA.”’,
 ‘Most chaotic Tuesday of your life.’,
 ],
-choices:[
-{t:‘Walk in. Order a Mexican Mocha.’,             risk:0, pts:10, sus:0,  ht:0,  ic:‘✅’, hd:‘SMART MOVE’,          he:‘The mocha is incredible. You consider a 5-star review.’},
-{t:‘Sit. Google “El Mencho daughter” loudly.’,    risk:2, pts:5,  sus:25, ht:5,  ic:‘😬’, hd:‘BOLD CHOICE’,         he:‘She glances at your screen. Goes back to the espresso. Mistake.’},
-{t:‘Photo the exterior for “Sketchy Eats IE.”’,  risk:1, pts:8,  sus:10, ht:0,  ic:‘📸’, hd:‘DOCUMENTED’,          he:‘Great shot of the horchata sign. Questionable but great content.’},
-{t:‘Call your mom and narrate everything live.’,  risk:3, pts:3,  sus:15, ht:10, ic:‘📞’, hd:‘MOM IS WORRIED’,      he:’“Mijo that sounds dangerous.” Dad thinks you should get chilaquiles.’},
+ch:[
+{t:‘Walk in. Order a Mexican Mocha.’,            risk:0,pts:10,sus:0,  ht:0,  ic:‘✅’,hd:‘SMART MOVE’,        he:‘The mocha is incredible. You consider a 5-star review.’},
+{t:‘Sit. Google “El Mencho daughter” loudly.’,   risk:2,pts:5, sus:25, ht:5,  ic:‘😬’,hd:‘BOLD CHOICE’,       he:‘She glances at your screen. Goes back to the espresso. Mistake.’},
+{t:‘Photo exterior for “Sketchy Eats IE.”’,      risk:1,pts:8, sus:10, ht:0,  ic:‘📸’,hd:‘DOCUMENTED’,        he:‘Great horchata sign shot. Questionable but great content.’},
+{t:‘Call your mom and narrate everything.’,       risk:3,pts:3, sus:15, ht:10, ic:‘📞’,hd:‘MOM IS WORRIED’,    he:’“Mijo that sounds dangerous.” Dad says get the chilaquiles.’},
 ]
 },
 {
 loc:‘THE COUNTER’, emj:‘☕’,
-sign:’“Aquí el café tiene historia.” (Coffee with history.)’,
+sign:’“Aqui el cafe tiene historia.” (Coffee with history.)’,
 lines:[
 ‘Laisha takes your order professionally.’,
 ‘Menu: tortas, molletes, chilaquiles.’,
@@ -94,11 +104,11 @@ lines:[
 ‘Her earrings are gold.’,
 ‘You are staring at her earrings. Stop that.’,
 ],
-choices:[
-{t:‘Horchata Latte. Say nothing else.’,           risk:0, pts:15, sus:0,  ht:0,  ic:‘🥛’, hd:‘EXCELLENT’,          he:‘The horchata latte is transcendent. The cinnamon is doing something spiritual.’},
-{t:‘Order everything “for a review.” 14 followers.’, risk:1, pts:12, sus:5, ht:0, ic:‘🍽️’, hd:‘COMMITTED’,        he:‘She writes it down without blinking. Four tortas. You'll be here a while.’},
-{t:‘Ask if they accept crypto.’,                  risk:2, pts:2,  sus:30, ht:15, ic:‘💀’, hd:‘FATAL QUESTION’,      he:’“We take card or cash.” You've accidentally implied something.’},
-{t:’“I'll have whatever El Gaucho ordered.”’,   risk:3, pts:0,  sus:40, ht:20, ic:‘☠️’, hd:‘UNBELIEVABLE’,        he:‘El Gaucho is doing 11 years federal. She writes: Americano. You are sweating.’},
+ch:[
+{t:‘Horchata Latte. Say nothing else.’,           risk:0,pts:15,sus:0,  ht:0,  ic:‘🥛’,hd:‘EXCELLENT’,        he:‘Transcendent. The cinnamon is doing something spiritual.’},
+{t:‘Order everything “for a review.” 14 followers.’, risk:1,pts:12,sus:5, ht:0, ic:‘🍽’,hd:‘COMMITTED’,       he:‘She writes it down without blinking. Four tortas. Long wait.’},
+{t:‘Ask if they accept crypto.’,                  risk:2,pts:2, sus:30, ht:15, ic:‘💀’,hd:‘FATAL QUESTION’,    he:’“We take card or cash.” You have implied something terrible.’},
+{t:’“I'll have whatever El Gaucho ordered.”’,   risk:3,pts:0, sus:40, ht:20, ic:‘☠’,hd:‘UNBELIEVABLE’,       he:‘El Gaucho: 11 years federal. She writes: Americano. You sweat.’},
 ]
 },
 {
@@ -112,29 +122,29 @@ lines:[
 ‘47 new texts about the CNN article.’,
 ‘You are, somehow, fine.’,
 ],
-choices:[
-{t:‘Drink. Read a book. Be a person.’,            risk:0, pts:20, sus:-10, ht:0,  ic:‘📖’, hd:‘ENLIGHTENED’,       he:‘40 minutes. Laisha refills your water unprompted. You tip 30%.’},
-{t:‘Eavesdrop neighbors. Take notes.’,            risk:1, pts:8,  sus:20,  ht:5,  ic:‘👂’, hd:‘AMATEUR HOUR’,      he:‘They're talking quinceañera. You wrote “possible money transfer via cake.”’},
-{t:‘Film TikTok “cozy café vibe.” Tag location.’, risk:2, pts:5,  sus:35,  ht:10, ic:‘📱’, hd:‘VIRAL, BRIEFLY’,    he:‘200K views in one hour. None of them are good views. Your aunt commented.’},
-{t:‘Write a novella about this in real time.’,    risk:3, pts:15, sus:5,   ht:0,  ic:‘✍️’, hd:‘LITERARY GENIUS’,   he:‘Ch.1: The Horchata. Ch.2: The Earrings. Ch.3: The Neon Sign.’},
+ch:[
+{t:‘Drink. Read a book. Be a person.’,            risk:0,pts:20,sus:-10,ht:0,  ic:‘📖’,hd:‘ENLIGHTENED’,      he:‘40 minutes. Laisha refills your water unprompted. 30% tip.’},
+{t:‘Eavesdrop neighbors. Take notes.’,            risk:1,pts:8, sus:20, ht:5,  ic:‘👂’,hd:‘AMATEUR HOUR’,     he:‘It's a quinceañera. You wrote “possible money transfer via cake.”’},
+{t:‘Film TikTok “cozy cafe vibe.” Tag location.’, risk:2,pts:5, sus:35, ht:10, ic:‘📱’,hd:‘VIRAL, BRIEFLY’,   he:‘200K views in one hour. None of them are good views.’},
+{t:‘Write a novella about this in real time.’,    risk:3,pts:15,sus:5,  ht:0,  ic:‘✍’,hd:‘LITERARY GENIUS’,   he:‘Ch1: The Horchata. Ch2: The Earrings. Ch3: The Neon Sign.’},
 ]
 },
 {
 loc:‘BACK CORNER’, emj:‘👀’,
-sign:’“Aquí se respira familia.” (Family is in the air.)’,
+sign:’“Aqui se respira familia.” (Family is in the air.)’,
 lines:[
 ‘A man enters. Speaks quietly to Laisha.’,
 ‘“el abogado” … “los papeles” … “Riverside.”’,
 ‘90 seconds. He leaves.’,
 ‘Could be: totally normal legal paperwork.’,
-‘Could be: estate of a cartel boss.’,
-‘Could be: a dentist appointment.’,
+‘Could be: estate of the most notorious cartel’,
+‘boss in a decade. Or: a dentist appointment.’,
 ],
-choices:[
-{t:‘Mind your business. Order a second drink.’,   risk:0, pts:15, sus:-5,  ht:0,  ic:‘😌’, hd:‘WISE’,              he:‘Strawberry Matcha is even better. This is your café now.’},
-{t:’“So… your dad, huh?” [finger guns]’,        risk:2, pts:0,  sus:50,  ht:25, ic:‘🫵’, hd:‘INCREDIBLE AUDACITY’,he:’“Excuse me?” Said very calmly. Somehow worse than yelling.’},
-{t:‘Write down the lawyer's plate number.’,      risk:1, pts:5,  sus:25,  ht:15, ic:‘🚗’, hd:‘SURVEILLANCE MODE’, he:‘You have a plate and no idea what to do with it. Weird night ahead.’},
-{t:‘Start slowly clapping. For no reason.’,       risk:3, pts:-5, sus:45,  ht:0,  ic:‘👏’, hd:‘WHAT ARE YOU DOING’, he:‘Everyone looks. You keep clapping. Leave $20 on the table. Drive away.’},
+ch:[
+{t:‘Mind your business. Get a second drink.’,    risk:0,pts:15,sus:-5, ht:0,  ic:‘😌’,hd:‘WISE’,              he:‘Strawberry Matcha is even better. This is your cafe now.’},
+{t:’“So… your dad, huh?” [finger guns]’,       risk:2,pts:0, sus:50, ht:25, ic:‘🫵’,hd:‘INCREDIBLE AUDACITY’,he:’“Excuse me?” Said very calmly. Worse than if she'd yelled.’},
+{t:‘Write down the lawyer's plate number.’,     risk:1,pts:5, sus:25, ht:15, ic:‘🚗’,hd:‘SURVEILLANCE MODE’, he:‘Plate number, zero idea what to do with it. Weird night ahead.’},
+{t:‘Start slowly clapping. For no reason.’,      risk:3,pts:-5,sus:45, ht:0,  ic:‘👏’,hd:‘WHAT ARE YOU DOING’, he:‘Everyone stares. You keep clapping. Leave $20. Drive away.’},
 ]
 },
 {
@@ -145,14 +155,14 @@ lines:[
 ‘Looking for Laisha. Settling for customers.’,
 ‘Camera swings toward you like a turret.’,
 ‘“Did you notice anything unusual’,
-’ about the café?”’,
+’ about the cafe?”’,
 ‘You have four seconds.’,
 ],
-choices:[
-{t:’“Great horchata latte. Five stars.” Walk.’,   risk:0, pts:20, sus:0,  ht:0,  ic:‘🌟’, hd:‘SMOOTH OPERATOR’,   he:‘Your clip airs: “Local customer praises beverage.” Voice of reason.’},
-{t:’“I cannot comment at this time.”’,            risk:1, pts:10, sus:10, ht:20, ic:‘🤐’, hd:‘SUSPICIOUS AS HELL’, he:‘Separate story: “Customer Refuses Comment.” Your neighbors will see this.’},
-{t:‘Say everything. All of it. 18 minutes.’,      risk:2, pts:5,  sus:30, ht:30, ic:‘🎬’, hd:‘YOU TALKED TOO LONG’,he:‘You mention El Gaucho by name. The quinceañera. Mom calls mid-segment.’},
-{t:‘Grab mic. Do a live Matcha review.’,          risk:3, pts:25, sus:5,  ht:0,  ic:‘📺’, hd:‘CONTENT KING’,       he:’“Complex… hibiscus notes—” 400K views. Laisha DMs: “ty for the review”’},
+ch:[
+{t:’“Great horchata latte. Five stars.” Walk.’,  risk:0,pts:20,sus:0,  ht:0,  ic:‘🌟’,hd:‘SMOOTH OPERATOR’,  he:‘Your clip airs: “Local customer praises beverage.” Reasonable.’},
+{t:’“I cannot comment at this time.”’,           risk:1,pts:10,sus:10, ht:20, ic:‘🤐’,hd:‘SUSPICIOUS AS HELL’,he:’“Customer Refuses Comment.” Your neighbors will see this.’},
+{t:‘Say everything. All of it. 18 minutes.’,     risk:2,pts:5, sus:30, ht:30, ic:‘🎬’,hd:‘YOU TALKED TOO LONG’,he:‘You mention El Gaucho by name. Mom calls mid-segment.’},
+{t:‘Grab mic. Do a live Matcha review.’,         risk:3,pts:25,sus:5,  ht:0,  ic:‘📺’,hd:‘CONTENT KING’,      he:’“Hibiscus notes…” 400K views. Laisha DMs: “ty for the review”’},
 ]
 },
 {
@@ -160,22 +170,22 @@ loc:‘BACK INSIDE’, emj:‘💅’,
 sign:’“Familia primero.” (Family first.)’,
 lines:[
 ‘You went back in. Don't judge yourself.’,
-‘A second woman: older, sharper.’,
+‘A second woman — older, sharper.’,
 ‘Air of someone who did 25 months federal’,
 ‘and came out with better posture.’,
 ‘La Negra — Jessica Johana Oseguera.’,
-‘Eating a torta de mole. Legal documents.’,
+‘Eating torta de mole. Reading legal docs.’,
 ],
-choices:[
-{t:‘Nod politely. Go back to your drink.’,        risk:0, pts:20, sus:-5,  ht:0,  ic:‘🤝’, hd:‘CLASS ACT’,         he:‘She nods back. Two adults in a café. This is how humans work.’},
-{t:‘Ask if she knows any good tequila brands.’,   risk:2, pts:0,  sus:35,  ht:35, ic:‘🥃’, hd:‘YOU ABSOLUTE MENACE’,he:‘She ran Onze Black Tequila — to launder CJNG money. “Why.” No answer.’},
-{t:‘Loudly: “The restaurant business here is CLEAN.”’, risk:1, pts:5, sus:20, ht:10, ic:‘📢’, hd:‘EMPHASIS NOTED’, he:‘She puts down the document. Nobody in this room believes you.’},
-{t:‘Slide her a fake “True Crime Podcast” card.’,  risk:3, pts:10, sus:40,  ht:5,  ic:‘🎙️’, hd:‘MANIFESTING’,     he:‘She puts it in her pocket. You now have to start a podcast.’},
+ch:[
+{t:‘Nod politely. Go back to your drink.’,       risk:0,pts:20,sus:-5, ht:0,  ic:‘🤝’,hd:‘CLASS ACT’,         he:‘She nods back. Two adults in a cafe. Correct human behavior.’},
+{t:‘Ask if she knows any good tequila brands.’,  risk:2,pts:0, sus:35, ht:35, ic:‘🥃’,hd:‘ABSOLUTE MENACE’,   he:‘She ran Onze Black Tequila (CJNG money). “Why.” No answer.’},
+{t:‘Loudly: “The restaurant biz here is CLEAN.”’,risk:1,pts:5, sus:20, ht:10, ic:‘📢’,hd:‘EMPHASIS NOTED’,    he:‘She puts down the document. Nobody believes you.’},
+{t:‘Slide her a fake “True Crime Podcast” card.’, risk:3,pts:10,sus:40, ht:5,  ic:‘🎙’,hd:‘MANIFESTING’,      he:‘She pockets it. You now have to start a podcast.’},
 ]
 },
 {
-loc:‘BATHROOM HALLWAY’, emj:‘🕴️’,
-sign:’“Sonríe, estás en familia.” (Smile, you're among family.)’,
+loc:‘BATHROOM HALLWAY’, emj:‘🕴’,
+sign:’“Sonrie, estas en familia.” (Smile, you're among family.)’,
 lines:[
 ‘You bump into a man in the hallway.’,
 ‘Polo shirt. Khakis. New Balance 990s.’,
@@ -184,16 +194,16 @@ lines:[
 ‘“Did you notice anything?”’,
 ‘You are a person of interest. For coffee.’,
 ],
-choices:[
-{t:’“I had the horchata. Great café. I'm good.”’,risk:0, pts:20, sus:0,  ht:-10, ic:‘🧘’, hd:‘DIPLOMATICALLY IMMUNE’,he:‘Three groups, zero useful info. You are practically a spy.’},
-{t:‘Tell him everything you actually know.’,       risk:1, pts:8,  sus:0,  ht:-20, ic:‘📋’, hd:‘CIVIC DUTY DONE’,  he:‘25 minutes in the lot. Most paperwork a horchata has ever caused.’},
-{t:‘Ask to see a badge. Loudly. In the café.’,     risk:2, pts:5,  sus:50, ht:20,  ic:‘🪪’, hd:‘EVERYONE HEARD THAT’,he:‘The café goes quiet. La Negra eats. Laisha makes espresso. Badge shown.’},
-{t:‘Hand him your in-progress novella as evidence.’,risk:3,pts:30, sus:5,  ht:-5,  ic:‘📚’, hd:‘LITERARY EVIDENCE’, he:’“Chapter 3: The Earrings,” he says. “Pretty good.” You exchange cards.’},
+ch:[
+{t:’“Great horchata. Solid cafe. I'm good.”’,   risk:0,pts:20,sus:0,  ht:-10,ic:‘🧘’,hd:‘DIPLOMATICALLY IMMUNE’,he:‘Three groups, zero useful info. You are practically a spy.’},
+{t:‘Tell him everything you actually know.’,      risk:1,pts:8, sus:0,  ht:-20,ic:‘📋’,hd:‘CIVIC DUTY DONE’,  he:‘25 minutes. Most paperwork a horchata has ever caused.’},
+{t:‘Ask to see a badge. Loudly. In the cafe.’,    risk:2,pts:5, sus:50, ht:20, ic:‘🪪’,hd:‘EVERYONE HEARD THAT’,he:‘Cafe goes quiet. La Negra eats. Laisha makes espresso.’},
+{t:‘Hand him your in-progress novella as evidence.’,risk:3,pts:30,sus:5,ht:-5, ic:‘📚’,hd:‘LITERARY EVIDENCE’, he:’“Chapter 3: The Earrings.” “Pretty good.” You exchange cards.’},
 ]
 },
 {
 loc:‘THE FINAL CALL’, emj:‘🏁’,
-sign:’“Hasta luego, y gracias.” (See you later, and thank you.)’,
+sign:’“Hasta luego, y gracias.” (See you later, thank you.)’,
 lines:[
 ‘Three hours. Two drinks.’,
 ‘Legally ambiguous conversations witnessed.’,
@@ -202,186 +212,241 @@ lines:[
 ‘’,
 ‘One final choice.’,
 ],
-choices:[
-{t:’“Great horchata. Will return.” Yelp. Done.’,  risk:0, pts:30, sus:0,  ht:0,  ic:‘⭐’, hd:‘LEGEND’,             he:‘847 upvotes. WSJ calls it “the most Californian statement of the decade.”’},
-{t:‘Leave 1-star review: “Weird energy.”’,        risk:2, pts:-20,sus:20, ht:0,  ic:‘💀’, hd:‘COWARD’,             he:‘Ratio'd immediately. 2000 replies: “THE DRINKS ARE AMAZING.” Lawyer letter.’},
-{t:‘Tip $100. Say nothing. Walk into sunset.’,    risk:1, pts:25, sus:-20,ht:-10,ic:‘💰’, hd:‘MYTHIC ENERGY’,       he:‘Nobody knows who you are. Best and most confusing customer ever.’},
-{t:‘Ask for the WiFi password. Sit back down.’,   risk:3, pts:40, sus:10, ht:0,  ic:‘📶’, hd:‘INCREDIBLE COMMITMENT’,he:’“Chulis2018.” You connect. You finish the novella. This is your café now.’},
+ch:[
+{t:’“Great horchata. Will return.” Yelp. Done.’,  risk:0,pts:30,sus:0,  ht:0,  ic:‘⭐’,hd:‘LEGEND’,            he:‘847 upvotes. WSJ: “Most Californian statement of the decade.”’},
+{t:‘Leave 1-star review: “Weird energy.”’,        risk:2,pts:-20,sus:20,ht:0,  ic:‘💀’,hd:‘COWARD’,            he:‘Ratio'd instantly. 2000 replies: “DRINKS ARE AMAZING.” Lawyer letter.’},
+{t:‘Tip $100. Say nothing. Walk into sunset.’,    risk:1,pts:25,sus:-20,ht:-10,ic:‘💰’,hd:‘MYTHIC ENERGY’,      he:‘Nobody knows who you are. Best and most confusing customer ever.’},
+{t:‘Ask for the WiFi password. Sit back down.’,   risk:3,pts:40,sus:10, ht:0,  ic:‘📶’,hd:‘INCREDIBLE COMMITMENT’,he:’“Chulis2018.” You finish the novella. This is your cafe now.’},
 ]
 },
 ];
 
-// ── State ────────────────────────────────────────────────────────
+// ── State ────────────────────────────────────────────────
 let G = {
-screen: ‘intro’,  // intro | game | fb | over
-si: 0,            // scene index
+scr: ‘intro’,
+si: 0,
 score: 0,
 sus: 0,
 heat: 0,
-fb: null,         // feedback data
-fbt: 0,           // feedback timer (seconds)
+fb: null,
+fbt: 0,
 end: null,
 t: 0,
 lt: 0,
-pts: [],          // particles
+pts: [],
 };
 
-// ── Button registry (rebuilt each frame) ─────────────────────────
+// ── Button registry ──────────────────────────────────────
 let BTNS = [];
-function reg(id, x, y, w, h, fn) { BTNS.push({id,x,y,w,h,fn}); }
-
-// ── Input ────────────────────────────────────────────────────────
-function getPos(e) {
-const r = cv.getBoundingClientRect();
-const src = e.changedTouches ? e.changedTouches[0] : e;
-return { x: src.clientX - r.left, y: src.clientY - r.top };
+function reg(id, x, y, w, h, fn) {
+BTNS.push({ id, x, y, w, h, fn });
 }
-cv.addEventListener(‘pointerdown’, e => {
+
+// ── Input ────────────────────────────────────────────────
+cv.addEventListener(‘pointerdown’, function(e) {
 e.preventDefault();
-const p = getPos(e);
+const r = cv.getBoundingClientRect();
+const px = (e.clientX - r.left);
+const py = (e.clientY - r.top);
 for (const b of BTNS) {
-if (p.x>=b.x && p.x<=b.x+b.w && p.y>=b.y && p.y<=b.y+b.h) { b.fn(); break; }
+if (px >= b.x && px <= b.x + b.w && py >= b.y && py <= b.y + b.h) {
+b.fn();
+return;
+}
 }
 }, { passive: false });
 
-// ── Particles ────────────────────────────────────────────────────
-function spawnPts(x, y, col, n=10) {
-for (let i=0;i<n;i++) {
+// Also handle touch for older iOS
+cv.addEventListener(‘touchstart’, function(e) {
+e.preventDefault();
+const r = cv.getBoundingClientRect();
+const t0 = e.changedTouches[0];
+const px = t0.clientX - r.left;
+const py = t0.clientY - r.top;
+for (const b of BTNS) {
+if (px >= b.x && px <= b.x + b.w && py >= b.y && py <= b.y + b.h) {
+b.fn();
+return;
+}
+}
+}, { passive: false });
+
+// ── Particles ────────────────────────────────────────────
+function spawnPts(x, y, col, n) {
+n = n || 10;
+for (let i = 0; i < n; i++) {
 G.pts.push({
-x, y,
-vx:(Math.random()-0.5)*5,
-vy:-Math.random()*6-1,
-life:1, col,
-r:Math.random()*3+2
+x: x, y: y,
+vx: (Math.random() - 0.5) * 5,
+vy: -Math.random() * 6 - 1,
+life: 1.0,
+col: col,
+r: Math.random() * 3 + 2
 });
 }
 }
 function tickPts(dt) {
-G.pts = G.pts.filter(p=>{
-p.x+=p.vx*dt*60; p.y+=p.vy*dt*60; p.vy+=0.18*dt*60; p.life-=dt*1.8;
-return p.life>0;
-});
+const alive = [];
+for (const p of G.pts) {
+p.x += p.vx * dt * 60;
+p.y += p.vy * dt * 60;
+p.vy += 0.18 * dt * 60;
+p.life -= dt * 1.8;
+if (p.life > 0) alive.push(p);
+}
+G.pts = alive;
 }
 function drawPts() {
 for (const p of G.pts) {
 cx.globalAlpha = p.life;
 cx.fillStyle = p.col;
-cx.beginPath(); cx.arc(p.x,p.y,p.r,0,Math.PI*2); cx.fill();
+cx.beginPath();
+cx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+cx.fill();
 }
 cx.globalAlpha = 1;
 }
 
-// ── Draw Utilities ────────────────────────────────────────────────
-function rr(x,y,w,h,r) {
+// ── Draw helpers ─────────────────────────────────────────
+function rr(x, y, w, h, r) {
 cx.beginPath();
-cx.moveTo(x+r,y);
-cx.arcTo(x+w,y,x+w,y+h,r); cx.arcTo(x+w,y+h,x,y+h,r);
-cx.arcTo(x,y+h,x,y,r);     cx.arcTo(x,y,x+w,y,r);
+cx.moveTo(x + r, y);
+cx.arcTo(x+w, y,   x+w, y+h, r);
+cx.arcTo(x+w, y+h, x,   y+h, r);
+cx.arcTo(x,   y+h, x,   y,   r);
+cx.arcTo(x,   y,   x+w, y,   r);
 cx.closePath();
 }
-function fillRR(x,y,w,h,r,col)      { cx.fillStyle=col; rr(x,y,w,h,r); cx.fill(); }
-function strokeRR(x,y,w,h,r,col,lw) { cx.strokeStyle=col; cx.lineWidth=lw||1; rr(x,y,w,h,r); cx.stroke(); }
+function fillRR(x,y,w,h,r,col)     { cx.fillStyle=col; rr(x,y,w,h,r); cx.fill(); }
+function strokeRR(x,y,w,h,r,col,lw){ cx.strokeStyle=col; cx.lineWidth=lw||1; rr(x,y,w,h,r); cx.stroke(); }
 
-function tf(str,x,y,font,col,align,mw) {
-cx.font=font; cx.fillStyle=col; cx.textAlign=align||‘left’;
-if(mw) cx.fillText(str,x,y,mw); else cx.fillText(str,x,y);
+// Font stack: Bebas Neue if loaded by browser cache, else Impact, else sans-serif
+const FONT_TITLE = ‘Impact, Arial Black, sans-serif’;
+const FONT_MONO  = ‘Courier New, monospace’;
+
+function tf(str, x, y, sz, col, align, maxW, bold, mono) {
+const weight = bold ? ’bold ’ : ‘’;
+const face   = mono ? FONT_MONO : FONT_TITLE;
+cx.font = weight + s(sz) + ’px ’ + face;
+cx.fillStyle = col;
+cx.textAlign = align || ‘left’;
+if (maxW) cx.fillText(str, x, y, maxW);
+else cx.fillText(str, x, y);
 }
-function glow(col,b) { cx.shadowColor=col; cx.shadowBlur=b; }
-function ng()        { cx.shadowBlur=0; }
 
-// Wrap text into lines array
-function wrapText(str, maxW, font) {
-cx.font = font;
-const words = str.split(’ ‘);
-const lines = []; let line=’’;
+function glow(col, b) { cx.shadowColor = col; cx.shadowBlur = b; }
+function ng()          { cx.shadowBlur = 0; }
+
+function wrapText(str, maxW, sz, mono) {
+const face = mono ? FONT_MONO : FONT_TITLE;
+cx.font = s(sz) + ‘px ’ + face;
+const words = str.split(’ ’);
+const lines = [];
+let line = ‘’;
 for (const w of words) {
-const t = line ? line+’ ’+w : w;
-if (cx.measureText(t).width > maxW && line) { lines.push(line); line=w; }
-else line=t;
+const test = line ? line + ’ ’ + w : w;
+if (cx.measureText(test).width > maxW && line) {
+lines.push(line);
+line = w;
+} else {
+line = test;
+}
 }
 if (line) lines.push(line);
 return lines;
 }
 
-// ── Grain (static, regenerated each frame) ───────────────────────
+// ── Grain overlay ────────────────────────────────────────
+let grainCache = null, grainFrame = -1;
 function drawGrain() {
-const iw=64, ih=64;
+// Regenerate grain every 3 frames for performance
+const frame = Math.floor(G.t * 30);
+if (frame !== grainFrame) {
+grainFrame = frame;
+const gw = 128, gh = 128;
 const tmp = document.createElement(‘canvas’);
-tmp.width=iw; tmp.height=ih;
+tmp.width = gw; tmp.height = gh;
 const tc = tmp.getContext(‘2d’);
-const id = tc.createImageData(iw,ih);
-const d=id.data;
-for (let i=0;i<d.length;i+=4){
-const v=Math.random()*25|0; d[i]=d[i+1]=d[i+2]=v; d[i+3]=14;
+const id = tc.createImageData(gw, gh);
+const d = id.data;
+for (let i = 0; i < d.length; i += 4) {
+const v = Math.random() * 20 | 0;
+d[i] = d[i+1] = d[i+2] = v;
+d[i+3] = 12;
 }
-tc.putImageData(id,0,0);
-cx.globalAlpha=0.4;
-const pat=cx.createPattern(tmp,‘repeat’);
-cx.fillStyle=pat; cx.fillRect(0,0,W,H);
-cx.globalAlpha=1;
+tc.putImageData(id, 0, 0);
+grainCache = tmp;
+}
+if (grainCache) {
+cx.globalAlpha = 0.35;
+const pat = cx.createPattern(grainCache, ‘repeat’);
+cx.fillStyle = pat;
+cx.fillRect(0, 0, W, H);
+cx.globalAlpha = 1;
+}
 }
 
-// ════════════════════════════════════════════════════════════════
-//  SCREENS
-// ════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════
+//  SCREEN RENDERERS
+// ════════════════════════════════════════════════════════
 
-// ── INTRO ────────────────────────────────────────────────────────
 function drawIntro(t) {
-BTNS=[];
+BTNS = [];
 
-// BG
-cx.fillStyle=DARK; cx.fillRect(0,0,W,H);
-const g=cx.createRadialGradient(W/2,H*0.3,0,W/2,H*0.3,W*0.8);
-g.addColorStop(0,‘rgba(80,30,5,0.4)’); g.addColorStop(1,‘rgba(0,0,0,0)’);
-cx.fillStyle=g; cx.fillRect(0,0,W,H);
+// Background
+cx.fillStyle = ‘#0a0300’;
+cx.fillRect(0, 0, W, H);
+const g1 = cx.createRadialGradient(W/2, H*0.3, 0, W/2, H*0.3, W*0.8);
+g1.addColorStop(0, ‘rgba(70,25,5,0.5)’);
+g1.addColorStop(1, ‘rgba(0,0,0,0)’);
+cx.fillStyle = g1;
+cx.fillRect(0, 0, W, H);
 
 // Steam wisps
-for (let i=0;i<4;i++) {
-const sx = W*(0.25+i*0.17);
-const phase = ((t*0.6+i*1.5)%1)*H*0.5;
-cx.strokeStyle=`rgba(255,255,255,${0.03+Math.sin(t+i)*0.01})`;
-cx.lineWidth=s(2);
+for (let i = 0; i < 3; i++) {
+const sx = W * (0.28 + i * 0.22);
+const phase = ((t * 0.5 + i * 1.7) % 1) * H * 0.55;
+cx.strokeStyle = ‘rgba(255,200,100,0.04)’;
+cx.lineWidth = s(2);
 cx.beginPath();
-cx.moveTo(sx+Math.sin(t*0.7+i)*s(15), H-phase);
-cx.bezierCurveTo(
-sx+Math.sin(t+i)*s(20), H-phase-s(40),
-sx+Math.cos(t+i)*s(20), H-phase-s(80),
-sx+Math.sin(t+i+2)*s(10), H-phase-s(120)
+cx.moveTo(sx + Math.sin(t * 0.8 + i) * s(12), H - phase);
+cx.quadraticCurveTo(
+sx + Math.cos(t + i) * s(18), H - phase - s(60),
+sx + Math.sin(t + i + 1) * s(10), H - phase - s(110)
 );
 cx.stroke();
 }
 
-const ctr = W/2;
-let y = H*0.05;
+const ctr = W / 2;
+let y = H * 0.05;
 
-// Title
-const tsz = s(54);
-glow(GOLD,20);
-tf(‘EL RINCÓN’, ctr, y+tsz, `bold ${tsz}px Bebas,Impact,sans-serif`, GOLD, ‘center’);
-tf(‘LA CHULIS’, ctr, y+tsz*2+s(4), `bold ${tsz}px Bebas,Impact,sans-serif`, GOLD, ‘center’);
+// Title block
+const tsz = 52;
+glow(GOLD, 18);
+tf(‘EL RINCON’, ctr, y + s(tsz), tsz, GOLD, ‘center’);
+tf(‘LA CHULIS’, ctr, y + s(tsz) * 2 + s(4), tsz, GOLD, ‘center’);
 ng();
-cx.globalAlpha=0.35;
-tf(‘LA CHULIS’, ctr+s(3), y+tsz*2+s(8), `bold ${tsz}px Bebas,Impact,sans-serif`, RED, ‘center’);
-cx.globalAlpha=1;
+cx.globalAlpha = 0.3;
+tf(‘LA CHULIS’, ctr + s(3), y + s(tsz) * 2 + s(8), tsz, RED, ‘center’);
+cx.globalAlpha = 1;
 
-y += tsz*2.3+s(12);
+y += s(tsz) * 2.3 + s(10);
 
 tf(‘A GAME OF COFFEE, CARTEL LEGACY & QUESTIONABLE CHOICES’,
-ctr, y, `${s(9)}px Bebas,Impact,sans-serif`, STEAM, ‘center’, W-s(30));
-y += s(18);
+ctr, y, 9, STEAM, ‘center’, W - s(28));
+y += s(16);
 
 // Divider
-cx.strokeStyle=GOLDD; cx.lineWidth=1;
-cx.beginPath(); cx.moveTo(s(30),y); cx.lineTo(W-s(30),y); cx.stroke();
+cx.strokeStyle = GOLDD; cx.lineWidth = 1;
+cx.beginPath(); cx.moveTo(s(28), y); cx.lineTo(W - s(28), y); cx.stroke();
 y += s(14);
 
-// Lore
-const lf = `${s(11)}px monospace`;
-const lb = `bold ${s(11)}px monospace`;
+// Lore lines
+const lh = s(15.5);
 const lore = [
 [‘PERRIS, CA.  802 Navajo Rd.  A strip mall.’, true],
 [’’, false],
-[‘LAISHA OSEGUERA GONZÁLEZ, 24,’, true],
+[‘LAISHA OSEGUERA GONZALEZ, 24,’, true],
 [‘business student. Daughter of El Mencho —’, false],
 [‘CJNG boss, killed Feb 22 in mil. operation.’, false],
 [‘Husband El Gaucho: 11 yrs federal.’, false],
@@ -390,345 +455,379 @@ const lore = [
 [’’, false],
 [‘You are a customer.  A suspicious one.’, false],
 ];
-
-const lh = s(16);
-for (const [line,bold] of lore) {
-if (line) tf(line, s(26), y, bold?lb:lf, bold?GOLD:CREAM, ‘left’, W-s(32));
+for (const [line, bold] of lore) {
+if (line) tf(line, s(22), y, 11, bold ? GOLD : CREAM, ‘left’, W - s(28), bold, true);
 y += lh;
 }
-y += s(8);
+y += s(6);
 
 // Rules box
-const rboxH = s(104);
-fillRR(s(16),y,W-s(32),rboxH,s(7),‘rgba(255,255,255,0.03)’);
-strokeRR(s(16),y,W-s(32),rboxH,s(7),‘rgba(212,160,23,0.2)’);
-tf(‘HOW TO PLAY’, s(28), y+s(16), `${s(10)}px Bebas,Impact,sans-serif`, GOLD, ‘left’);
-const rules=[
+const rbH = s(100);
+fillRR(s(14), y, W - s(28), rbH, s(7), ‘rgba(255,255,255,0.03)’);
+strokeRR(s(14), y, W - s(28), rbH, s(7), ‘rgba(212,160,23,0.2)’);
+tf(‘HOW TO PLAY’, s(26), y + s(16), 10, GOLD, ‘left’);
+const rules = [
 ‘4 choices each turn — like a spinner.’,
-‘🟢 Low  🟡 Medium  🔴 High  🟣 Wild’,
-‘Suspicion 100% → Laisha makes a call.’,
-‘Heat 100% → DEA wants a word.’,
-‘Goal: max Café Score before getting bounced.’,
+‘Low / Medium / High / Wildcard risk.’,
+‘Suspicion 100% — Laisha makes a call.’,
+‘Heat 100% — DEA wants a word.’,
+‘Goal: max Cafe Score before getting bounced.’,
 ];
-const rf2=`${s(10)}px monospace`;
-rules.forEach((r,i)=>tf(r,s(28),y+s(30)+i*s(15),rf2,i===0?CREAM:STEAM,‘left’,W-s(56)));
-y += rboxH+s(12);
+rules.forEach((r, i) => tf(r, s(26), y + s(30) + i * s(14), 10, i === 0 ? CREAM : STEAM, ‘left’, W - s(50), false, true));
+y += rbH + s(10);
 
-// Start button
-const bw=W-s(56), bh=s(54), bx=s(28), by=Math.min(y, H-s(120));
-const pulse=0.82+Math.sin(t*2.8)*0.18;
-cx.globalAlpha=pulse;
-fillRR(bx,by,bw,bh,s(10),GOLD);
-cx.globalAlpha=1;
-tf(‘☕  ORDER SOMETHING’, bx+bw/2, by+bh/2+s(8),
-`bold ${s(15)}px Bebas,Impact,sans-serif`, ‘#1a0f00’, ‘center’);
-reg(‘start’,bx,by,bw,bh,()=>{ G.screen=‘game’; });
+// START BUTTON
+const bw = W - s(52), bh = s(54), bx = s(26), by = Math.min(y, H - s(110));
+const pulse = 0.82 + Math.sin(t * 2.8) * 0.18;
+cx.globalAlpha = pulse;
+fillRR(bx, by, bw, bh, s(10), GOLD);
+cx.globalAlpha = 1;
+tf(‘ENTER EL RINCON’, bx + bw/2, by + bh/2 + s(8), 17, ‘#140800’, ‘center’, 0, true);
+reg(‘start’, bx, by, bw, bh, function() { G.scr = ‘game’; });
 
-y = by+bh+s(12);
-tf(’[ Hightower live ] — Made with Claude AI / Anthropic · Satire’,
-ctr, y, `${s(8)}px monospace`, ‘rgba(255,255,255,0.2)’, ‘center’, W-s(20));
+const dy = by + bh + s(11);
+tf(’[ Hightower live ] — Claude AI / Anthropic — Satire’,
+ctr, dy, 8, ‘rgba(255,255,255,0.2)’, ‘center’, W - s(16), false, true);
 }
 
-// ── GAME ────────────────────────────────────────────────────────
+// ── GAME screen ──────────────────────────────────────────
 function drawGame(t) {
-BTNS=[];
+BTNS = [];
 const sc = SCENES[G.si];
 
-// BG
-cx.fillStyle=BG; cx.fillRect(0,0,W,H);
+cx.fillStyle = BG;
+cx.fillRect(0, 0, W, H);
 
 // Header
-const hh = s(54);
-cx.fillStyle=DARK; cx.fillRect(0,0,W,hh+s(14));
-cx.strokeStyle=GOLD; cx.lineWidth=1.5;
-cx.beginPath(); cx.moveTo(0,hh); cx.lineTo(W,hh); cx.stroke();
+const hh = s(52);
+cx.fillStyle = DARK;
+cx.fillRect(0, 0, W, hh + s(12));
+cx.strokeStyle = GOLD; cx.lineWidth = 1.5;
+cx.beginPath(); cx.moveTo(0, hh); cx.lineTo(W, hh); cx.stroke();
 
-tf(‘EL RINCÓN LA CHULIS’, W/2, s(22),
-`${s(14)}px Bebas,Impact,sans-serif`, GOLD, ‘center’);
-tf(‘802 Navajo Rd · Perris, CA’, W/2, s(38),
-`${s(9)}px monospace`, STEAM, ‘center’);
+tf(‘EL RINCON LA CHULIS’, W/2, s(20), 14, GOLD, ‘center’);
+tf(‘802 Navajo Rd · Perris, CA’, W/2, s(36), 9, STEAM, ‘center’, 0, false, true);
 
-// Neon sign flicker
-const flk = Math.random()>0.02?1:0.3;
-cx.globalAlpha=flk;
-glow(GREEN,8);
-tf(’“La vida es corta, cómete una torta”’, W/2, s(52),
-`italic ${s(8.5)}px monospace`, ‘rgba(57,255,20,0.65)’, ‘center’, W-s(20));
-ng(); cx.globalAlpha=1;
+// Neon flicker sign
+const flk = Math.random() > 0.015 ? 1 : 0.25;
+cx.globalAlpha = flk;
+glow(GREEN, 7);
+tf(sc.sign, W/2, s(50), 8.5, ‘rgba(57,255,20,0.6)’, ‘center’, W - s(18), false, true);
+ng(); cx.globalAlpha = 1;
 
 // Status row
-const sy = hh+s(6);
-const sw2=W/4;
-const stats=[
-{l:‘TURN’, v:`${G.si+1}/8`},
-{l:‘SCORE’, v:G.score},
-{l:‘HEAT 🌶’, v:G.heat},
-{l:‘SUS’, v:G.sus+’%’},
+const sy = hh + s(5);
+const sw = W / 4;
+const stats = [
+{ l:‘TURN’,     v: (G.si+1)+’/8’ },
+{ l:‘SCORE’,    v: G.score },
+{ l:‘HEAT’,     v: G.heat },
+{ l:‘SUS’,      v: G.sus+’%’ },
 ];
-stats.forEach((st,i)=>{
-const x=i*sw2;
-if(i>0){
-cx.strokeStyle=‘rgba(212,160,23,0.15)’; cx.lineWidth=1;
-cx.beginPath(); cx.moveTo(x,sy); cx.lineTo(x,sy+s(34)); cx.stroke();
+stats.forEach(function(st, i) {
+const x = i * sw;
+if (i > 0) {
+cx.strokeStyle = ‘rgba(212,160,23,0.12)’; cx.lineWidth = 1;
+cx.beginPath(); cx.moveTo(x, sy); cx.lineTo(x, sy + s(32)); cx.stroke();
 }
-tf(st.l, x+sw2/2, sy+s(13), `${s(8)}px Bebas,Impact,sans-serif`, STEAM, ‘center’);
-const vc = (st.l===‘SUS’&&G.sus>65)||(st.l===‘HEAT 🌶’&&G.heat>65) ? RED : GOLD;
-tf(String(st.v), x+sw2/2, sy+s(27), `bold ${s(14)}px Bebas,Impact,sans-serif`, vc, ‘center’);
+tf(st.l, x + sw/2, sy + s(12), 8, STEAM, ‘center’);
+const vc = ((st.l===‘SUS’ && G.sus>65)||(st.l===‘HEAT’ && G.heat>65)) ? RED : GOLD;
+tf(String(st.v), x + sw/2, sy + s(26), 14, vc, ‘center’, 0, true);
 });
 
-// Sus gradient bar
-const sby = sy+s(35);
-cx.fillStyle=‘rgba(255,255,255,0.07)’;
-cx.fillRect(0,sby,W,s(3));
-const sg=cx.createLinearGradient(0,0,W,0);
-sg.addColorStop(0,’#1a7a06’); sg.addColorStop(0.5,GOLD); sg.addColorStop(1,RED);
-cx.fillStyle=sg;
-cx.fillRect(0,sby,(G.sus/100)*W,s(3));
+// Sus bar
+const sby = sy + s(33);
+cx.fillStyle = ‘rgba(255,255,255,0.07)’;
+cx.fillRect(0, sby, W, s(3));
+const sg = cx.createLinearGradient(0, 0, W, 0);
+sg.addColorStop(0, ‘#1a7a06’);
+sg.addColorStop(0.55, GOLD);
+sg.addColorStop(1, RED);
+cx.fillStyle = sg;
+cx.fillRect(0, sby, (G.sus / 100) * W, s(3));
 
-let y=sby+s(10);
+let y = sby + s(9);
 
 // Location badge
-cx.strokeStyle=‘rgba(192,57,43,0.4)’; cx.lineWidth=1;
-cx.beginPath(); cx.moveTo(s(14),y+s(7)); cx.lineTo(s(50),y+s(7)); cx.stroke();
-tf(sc.loc, s(56), y+s(10), `${s(10)}px Bebas,Impact,sans-serif`, RED, ‘left’);
-const lw2 = cx.measureText(sc.loc).width + s(8);
-cx.beginPath(); cx.moveTo(s(56)+lw2,y+s(7)); cx.lineTo(W-s(14),y+s(7)); cx.stroke();
-y += s(20);
+cx.strokeStyle = ‘rgba(192,57,43,0.4)’; cx.lineWidth = 1;
+cx.beginPath(); cx.moveTo(s(12), y + s(6)); cx.lineTo(s(44), y + s(6)); cx.stroke();
+tf(sc.loc, s(50), y + s(9), 10, RED, ‘left’);
+cx.font = s(10) + ’px ’ + FONT_TITLE;
+const locW = cx.measureText(sc.loc).width;
+cx.beginPath();
+cx.moveTo(s(50) + locW + s(6), y + s(6));
+cx.lineTo(W - s(12), y + s(6));
+cx.stroke();
+y += s(18);
 
 // Scene panel
-const ph = s(112);
-fillRR(s(10),y,W-s(20),ph,s(8),‘rgba(0,0,0,0.45)’);
-strokeRR(s(10),y,W-s(20),ph,s(8),‘rgba(212,160,23,0.2)’);
+const ph = s(108);
+fillRR(s(9), y, W - s(18), ph, s(8), ‘rgba(0,0,0,0.45)’);
+strokeRR(s(9), y, W - s(18), ph, s(8), ‘rgba(212,160,23,0.18)’);
 
-// Emoji (large, faded bg)
-cx.font=`${s(52)}px serif`; cx.textAlign=‘center’;
-cx.globalAlpha=0.10+Math.abs(Math.sin(t*1.1))*0.05;
-cx.fillText(sc.emj, s(52), y+ph/2+s(18));
-cx.globalAlpha=1;
-cx.globalAlpha=0.75;
-cx.fillText(sc.emj, s(50), y+ph/2+s(14));
-cx.globalAlpha=1;
+// Big emoji (faded)
+cx.font = s(50) + ‘px serif’;
+cx.textAlign = ‘center’;
+cx.globalAlpha = 0.10 + Math.abs(Math.sin(t * 1.1)) * 0.05;
+cx.fillText(sc.emj, s(48), y + ph/2 + s(16));
+cx.globalAlpha = 0.75;
+cx.fillText(sc.emj, s(46), y + ph/2 + s(14));
+cx.globalAlpha = 1;
 
 // Story lines
-const sf2=`${s(10.5)}px monospace`;
-sc.lines.forEach((ln,i)=>{
-tf(ln, s(88), y+s(14)+i*s(15.5), sf2, CREAM, ‘left’, W-s(100));
+sc.lines.forEach(function(ln, i) {
+tf(ln, s(84), y + s(12) + i * s(15), 10.5, CREAM, ‘left’, W - s(96), false, true);
 });
 
-// Wall sign
-glow(GREEN,4);
-tf(sc.sign, W/2, y+ph-s(8),
-`italic ${s(8.5)}px monospace`, ‘rgba(57,255,20,0.5)’, ‘center’, W-s(24));
+// Wall sign at bottom of panel
+glow(GREEN, 4);
+tf(sc.sign, W/2, y + ph - s(7), 8.5, ‘rgba(57,255,20,0.45)’, ‘center’, W - s(22), false, true);
 ng();
 
-y += ph+s(8);
+y += ph + s(7);
 
-// Choice buttons (2x2 grid)
-const cbw=(W-s(32))/2, cbh=s(80), cgap=s(8);
-sc.choices.forEach((ch,i)=>{
-const col=i%2, row=Math.floor(i/2);
-const bx=s(10)+col*(cbw+cgap);
-const by2=y+row*(cbh+cgap);
+// Choice buttons 2×2
+const cbw = (W - s(28)) / 2;
+const cbh = s(82);
+const cgap = s(8);
+
+sc.ch.forEach(function(ch, i) {
+const col = i % 2;
+const row = Math.floor(i / 2);
+const bx = s(8) + col * (cbw + cgap);
+const by = y + row * (cbh + cgap);
 
 ```
-fillRR(bx,by2,cbw,cbh,s(7),'rgba(12,6,2,0.92)');
+// Base
+fillRR(bx, by, cbw, cbh, s(7), 'rgba(10,5,2,0.95)');
 
-// Risk left strip
-cx.globalAlpha=0.8;
-cx.fillStyle=RISK_C[ch.risk];
-rr(bx,by2,s(5),cbh,s(7)); cx.fill();
-cx.globalAlpha=1;
+// Risk strip (left edge)
+cx.save();
+cx.fillStyle = RISK_C[ch.risk];
+cx.globalAlpha = 0.75;
+rr(bx, by, s(5), cbh, s(7));
+cx.fill();
+cx.restore();
 
-strokeRR(bx,by2,cbw,cbh,s(7),'rgba(212,160,23,0.22)');
+// Border
+strokeRR(bx, by, cbw, cbh, s(7), 'rgba(212,160,23,0.20)');
 
 // Number
-tf(String(i+1), bx+s(14), by2+s(22),
-   `${s(16)}px Bebas,Impact,sans-serif`, GOLD, 'left');
+tf(String(i+1), bx + s(13), by + s(22), 18, GOLD, 'left', 0, true);
 
 // Choice text wrapped
-const ctf=`${s(9.5)}px monospace`;
-const ctlines = wrapText(ch.t, cbw-s(24), ctf).slice(0,3);
-ctlines.forEach((cl,li)=>tf(cl, bx+s(12), by2+s(34)+li*s(13), ctf, CREAM, 'left'));
+const ctlines = wrapText(ch.t, cbw - s(22), 10, true).slice(0, 3);
+ctlines.forEach(function(cl, li) {
+  tf(cl, bx + s(11), by + s(35) + li * s(13), 10, CREAM, 'left', 0, false, true);
+});
 
-// Risk pill
-const pf=`${s(8.5)}px Bebas,Impact,sans-serif`;
-fillRR(bx+s(8),by2+cbh-s(18),cbw-s(16),s(13),s(3),RISK_C[ch.risk]+'22');
-tf(RISK_L[ch.risk], bx+cbw/2, by2+cbh-s(9), pf, RISK_C[ch.risk], 'center');
+// Risk label pill
+fillRR(bx + s(8), by + cbh - s(17), cbw - s(16), s(13), s(3), RISK_C[ch.risk] + '28');
+tf(RISK_E[ch.risk] + ' ' + RISK_L[ch.risk], bx + cbw/2, by + cbh - s(9), 9, RISK_C[ch.risk], 'center');
 
-reg('ch'+i,bx,by2,cbw,cbh,()=>doChoice(i));
+reg('ch'+i, bx, by, cbw, cbh, (function(idx){ return function(){ doChoice(idx); }; })(i));
 ```
 
 });
 }
 
-// ── FEEDBACK ────────────────────────────────────────────────────
+// ── FEEDBACK overlay ────────────────────────────────────
 function drawFeedback(t) {
 drawGame(t);
-cx.fillStyle=‘rgba(0,0,0,0.75)’;
-cx.fillRect(0,0,W,H);
-BTNS=[];
+cx.fillStyle = ‘rgba(0,0,0,0.78)’;
+cx.fillRect(0, 0, W, H);
+BTNS = [];
 
-const fd=G.fb;
-const pw=W-s(56), ph=s(200), px=s(28), py=H/2-ph/2;
+const fd = G.fb;
+const pw = W - s(52);
+const ph = s(195);
+const px = s(26);
+const py = H/2 - ph/2;
 
-fillRR(px,py,pw,ph,s(14),DARK);
-strokeRR(px,py,pw,ph,s(14),GOLD,1.5);
+fillRR(px, py, pw, ph, s(12), DARK);
+strokeRR(px, py, pw, ph, s(12), GOLD, 1.5);
 
-cx.font=`${s(42)}px serif`; cx.textAlign=‘center’;
-cx.fillText(fd.ic, W/2, py+s(52));
+// Icon
+cx.font = s(40) + ‘px serif’;
+cx.textAlign = ‘center’;
+cx.fillText(fd.ic, W/2, py + s(50));
 
-glow(GOLD,12);
-tf(fd.hd, W/2, py+s(78), `${s(18)}px Bebas,Impact,sans-serif`, GOLD, ‘center’);
+// Title
+glow(GOLD, 10);
+tf(fd.hd, W/2, py + s(76), 18, GOLD, ‘center’, 0, true);
 ng();
 
-const ef=`${s(10)}px monospace`;
-const elines=wrapText(fd.he, pw-s(36), ef);
-elines.forEach((l,i)=>tf(l, W/2, py+s(96)+i*s(16), ef, CREAM, ‘center’));
+// Text
+const etls = wrapText(fd.he, pw - s(32), 10.5, true);
+etls.forEach(function(l, i) {
+tf(l, W/2, py + s(93) + i * s(16), 10.5, CREAM, ‘center’, 0, false, true);
+});
 
-// Stat changes
-const chg=fd.ch;
-const cf2=`${s(9)}px Bebas,Impact,sans-serif`;
-let cx3=px+s(16);
-if(chg.pts!==0){
-tf((chg.pts>0?’+’:’’)+chg.pts+’ PTS’, cx3, py+ph-s(20), cf2, chg.pts>0?GREEN:RED, ‘left’);
-cx3+=s(78);
+// Stat delta readout
+const chg = fd.ch;
+let cx3 = px + s(14);
+const df = 9;
+if (chg.pts !== 0) {
+tf((chg.pts>0?’+’:’’)+chg.pts+’ PTS’, cx3, py+ph-s(19), df, chg.pts>0?GREEN:RED, ‘left’);
+cx3 += s(76);
 }
-if(chg.sus!==0){
-tf((chg.sus>0?’+’:’’)+chg.sus+’ SUS’, cx3, py+ph-s(20), cf2, chg.sus>0?RED:GREEN, ‘left’);
-cx3+=s(68);
+if (chg.sus !== 0) {
+tf((chg.sus>0?’+’:’’)+chg.sus+’ SUS’, cx3, py+ph-s(19), df, chg.sus>0?RED:GREEN, ‘left’);
+cx3 += s(66);
 }
-if(chg.ht!==0){
-tf((chg.ht>0?’+’:’’)+chg.ht+’ HEAT’, cx3, py+ph-s(20), cf2, chg.ht>0?RED:GREEN, ‘left’);
-}
-
-// Progress bar (timer)
-const prog=G.fbt/2.2;
-cx.fillStyle=‘rgba(255,255,255,0.08)’;
-cx.fillRect(px+s(10),py+ph-s(7),pw-s(20),s(4));
-cx.fillStyle=GOLD;
-cx.fillRect(px+s(10),py+ph-s(7),(pw-s(20))*(1-prog),s(4));
+if (chg.ht !== 0) {
+tf((chg.ht>0?’+’:’’)+chg.ht+’ HEAT’, cx3, py+ph-s(19), df, chg.ht>0?RED:GREEN, ‘left’);
 }
 
-// ── GAME OVER ────────────────────────────────────────────────────
+// Timer drain bar
+const prog = G.fbt / 2.2;
+cx.fillStyle = ‘rgba(255,255,255,0.07)’;
+cx.fillRect(px + s(8), py + ph - s(7), pw - s(16), s(4));
+cx.fillStyle = GOLD;
+cx.fillRect(px + s(8), py + ph - s(7), (pw - s(16)) * (1 - prog), s(4));
+}
+
+// ── GAME OVER screen ─────────────────────────────────────
 function drawOver(t) {
-BTNS=[];
-const ed=G.end;
+BTNS = [];
+const ed = G.end;
 
-cx.fillStyle=DARK; cx.fillRect(0,0,W,H);
-const g2=cx.createRadialGradient(W/2,H*0.3,0,W/2,H*0.3,W*0.7);
-g2.addColorStop(0,ed.win?‘rgba(80,50,5,0.5)’:‘rgba(80,8,8,0.5)’);
-g2.addColorStop(1,‘rgba(0,0,0,0)’);
-cx.fillStyle=g2; cx.fillRect(0,0,W,H);
+cx.fillStyle = DARK;
+cx.fillRect(0, 0, W, H);
+const g2 = cx.createRadialGradient(W/2, H*0.3, 0, W/2, H*0.3, W*0.7);
+g2.addColorStop(0, ed.win ? ‘rgba(80,50,5,0.55)’ : ‘rgba(80,8,8,0.55)’);
+g2.addColorStop(1, ‘rgba(0,0,0,0)’);
+cx.fillStyle = g2;
+cx.fillRect(0, 0, W, H);
 
-if(Math.random()>0.7) spawnPts(Math.random()*W, H+10, ed.win?GOLD:RED, 2);
+// Particle rain
+if (Math.random() > 0.7) spawnPts(Math.random() * W, H + 10, ed.win ? GOLD : RED, 2);
 
-const ctr=W/2;
-let y=H*0.08;
+const ctr = W / 2;
+let y = H * 0.08;
 
-cx.font=`${s(60)}px serif`; cx.textAlign=‘center’;
-cx.fillText(ed.ic, ctr, y+s(60));
-y+=s(76);
+cx.font = s(56) + ‘px serif’;
+cx.textAlign = ‘center’;
+cx.fillText(ed.ic, ctr, y + s(56));
+y += s(72);
 
-glow(ed.win?GOLD:RED,18);
-tf(ed.ti, ctr, y, `${s(30)}px Bebas,Impact,sans-serif`, ed.win?GOLD:RED, ‘center’, W-s(24));
+glow(ed.win ? GOLD : RED, 16);
+tf(ed.ti, ctr, y, 28, ed.win ? GOLD : RED, ‘center’, W - s(20), true);
 ng();
-y+=s(40);
+y += s(40);
 
-tf(’FINAL CAFÉ SCORE: ’+G.score, ctr, y,
-`${s(14)}px Bebas,Impact,sans-serif`, GOLD, ‘center’);
-y+=s(22);
+tf(’FINAL CAFE SCORE: ’ + G.score, ctr, y, 14, GOLD, ‘center’, 0, true);
+y += s(22);
 
-if(ed.gr){
-tf(ed.gr, ctr, y, `${s(11)}px Bebas,Impact,sans-serif`, STEAM, ‘center’);
-y+=s(22);
+if (ed.gr) {
+tf(ed.gr, ctr, y, 11, STEAM, ‘center’);
+y += s(22);
 }
 
-cx.strokeStyle=‘rgba(212,160,23,0.3)’; cx.lineWidth=1;
-cx.beginPath(); cx.moveTo(s(36),y); cx.lineTo(W-s(36),y); cx.stroke();
-y+=s(16);
+cx.strokeStyle = ‘rgba(212,160,23,0.28)’; cx.lineWidth = 1;
+cx.beginPath(); cx.moveTo(s(32), y); cx.lineTo(W - s(32), y); cx.stroke();
+y += s(16);
 
-const etf2=`${s(11)}px monospace`;
-const etls=wrapText(ed.tx, W-s(52), etf2);
-etls.forEach((l,i)=>tf(l, ctr, y+i*s(18), etf2, CREAM, ‘center’));
-y+=etls.length*s(18)+s(22);
+const etls = wrapText(ed.tx, W - s(48), 11, true);
+etls.forEach(function(l, i) {
+tf(l, ctr, y + i * s(18), 11, CREAM, ‘center’, 0, false, true);
+});
+y += etls.length * s(18) + s(20);
 
-const rbw=W-s(56), rbh=s(54), rbx=s(28), rby=Math.min(y,H-s(110));
-const p2=0.82+Math.sin(t*2.5)*0.18;
-cx.globalAlpha=p2;
-fillRR(rbx,rby,rbw,rbh,s(10),RED);
-cx.globalAlpha=1;
-tf(‘ORDER AGAIN ↺’, rbx+rbw/2, rby+rbh/2+s(8),
-`bold ${s(15)}px Bebas,Impact,sans-serif`, CREAM, ‘center’);
-reg(‘restart’,rbx,rby,rbw,rbh,()=>{
-G={…G, screen:‘intro’, si:0, score:0, sus:0, heat:0, fb:null, fbt:0, end:null, pts:[]};
+// Restart button
+const rbw = W - s(52), rbh = s(54), rbx = s(26);
+const rby = Math.min(y, H - s(108));
+const pulse = 0.82 + Math.sin(t * 2.5) * 0.18;
+cx.globalAlpha = pulse;
+fillRR(rbx, rby, rbw, rbh, s(10), RED);
+cx.globalAlpha = 1;
+tf(‘ORDER AGAIN’, rbx + rbw/2, rby + rbh/2 + s(8), 17, CREAM, ‘center’, 0, true);
+reg(‘restart’, rbx, rby, rbw, rbh, function() {
+G = { scr:‘intro’, si:0, score:0, sus:0, heat:0, fb:null, fbt:0, end:null, t:0, lt:performance.now(), pts:[] };
 });
 }
 
-// ── Game Logic ────────────────────────────────────────────────────
+// ── Game logic ────────────────────────────────────────────
 function doChoice(i) {
-if(G.screen!==‘game’) return;
-const ch = SCENES[G.si].choices[i];
-G.score = Math.max(0, G.score+ch.pts);
-G.sus   = Math.max(0, Math.min(100, G.sus+ch.sus));
-G.heat  = Math.max(0, Math.min(100, G.heat+ch.ht));
-spawnPts(W/2, H*0.6, RISK_C[ch.risk], 14);
-G.fb = { ic:ch.ic, hd:ch.hd, he:ch.he, ch:{pts:ch.pts,sus:ch.sus,ht:ch.ht} };
-G.fbt=0;
-G.screen=‘fb’;
+if (G.scr !== ‘game’) return;
+const ch = SCENES[G.si].ch[i];
+G.score = Math.max(0, G.score + ch.pts);
+G.sus   = Math.max(0, Math.min(100, G.sus + ch.sus));
+G.heat  = Math.max(0, Math.min(100, G.heat + ch.ht));
+spawnPts(W/2, H * 0.6, RISK_C[ch.risk], 14);
+G.fb  = { ic:ch.ic, hd:ch.hd, he:ch.he, ch:{ pts:ch.pts, sus:ch.sus, ht:ch.ht } };
+G.fbt = 0;
+G.scr = ‘fb’;
 }
 
 function checkEnd() {
-if(G.sus>=100){
-G.end={ic:‘📞’,ti:‘LAISHA MADE A CALL’,win:false,
-tx:‘Someone arrived in a black Suburban in 8 minutes. No explanation. You left your horchata unfinished. Best horchata of your life.’};
-G.screen=‘over’; return;
+if (G.sus >= 100) {
+G.end = { ic:‘📞’, ti:‘LAISHA MADE A CALL’, win:false,
+tx:‘Someone arrived in a black Suburban in 8 minutes. No explanation. You left your horchata unfinished. Best horchata of your life.’ };
+G.scr = ‘over’; return;
 }
-if(G.heat>=100){
-G.end={ic:‘🚔’,ti:‘DEA WANTS A WORD’,win:false,
-tx:‘New Balance 990s outside your apartment. “Just questions.” It is never just questions. The torta de mole haunts your dreams.’};
-G.screen=‘over’; return;
+if (G.heat >= 100) {
+G.end = { ic:‘🚔’, ti:‘DEA WANTS A WORD’, win:false,
+tx:‘New Balance 990s outside your apartment. “Just questions.” Never just questions. The torta de mole haunts your dreams.’ };
+G.scr = ‘over’; return;
 }
-if(G.si>=SCENES.length){
-const gr=G.score>=160?‘LEGENDARY CUSTOMER’:G.score>=120?‘SOLID REGULAR’:G.score>=80?‘PASSABLE HUMAN’:‘SUSPICIOUS INDIVIDUAL’;
-G.end={ic:‘☕’,ti:‘EL RINCÓN TE DA LAS GRACIAS’,win:true,gr,
-tx:G.score>=130
-?‘You navigated the most complicated Tuesday of your life with grace. The horchata latte was a 10/10. Laisha runs a good shop. You are choosing to believe that.’
-:‘You made some choices today. Some were coffee choices. Some were others. The horchata was objectively excellent and nothing changes that.’};
-G.screen=‘over’; return;
+if (G.si >= SCENES.length) {
+const gr = G.score>=160?‘LEGENDARY CUSTOMER’:G.score>=120?‘SOLID REGULAR’:G.score>=80?‘PASSABLE HUMAN’:‘SUSPICIOUS INDIVIDUAL’;
+G.end = { ic:‘☕’, ti:‘EL RINCON TE DA LAS GRACIAS’, win:true, gr:gr,
+tx: G.score >= 130
+? ‘You navigated the most complicated Tuesday of your life with grace. The horchata was a 10/10. Laisha runs a good shop. You are choosing to believe that.’
+: ‘You made some choices today. Some were coffee choices. Some were others. The horchata was excellent and nothing changes that.’ };
+G.scr = ‘over’;
 }
 }
 
-// ── Main Loop ──────────────────────────────────────────────────────
+// ── MAIN LOOP ─────────────────────────────────────────────
 function loop(ts) {
-const dt = Math.min((ts-G.lt)/1000, 0.05);
-G.lt=ts; G.t+=dt;
+const dt = Math.min((ts - G.lt) / 1000, 0.05);
+G.lt = ts;
+G.t += dt;
 
-if(G.screen===‘fb’){
-G.fbt+=dt;
-if(G.fbt>=2.2){
+// Feedback auto-advance
+if (G.scr === ‘fb’) {
+G.fbt += dt;
+if (G.fbt >= 2.2) {
 G.si++;
-G.screen=‘game’;
+G.scr = ‘game’;
 checkEnd();
 }
 }
 
 tickPts(dt);
 
-cx.fillStyle=’#000’; cx.fillRect(0,0,W,H);
+// *** DPR scaling applied fresh each frame ***
+// This is the Safari-safe approach: save/scale/draw/restore
+cx.save();
+cx.scale(DPR, DPR);
 
-if(G.screen===‘intro’) drawIntro(G.t);
-else if(G.screen===‘game’) drawGame(G.t);
-else if(G.screen===‘fb’)   drawFeedback(G.t);
-else if(G.screen===‘over’) drawOver(G.t);
+// Clear
+cx.fillStyle = ‘#000’;
+cx.fillRect(0, 0, W, H);
+
+if      (G.scr === ‘intro’) drawIntro(G.t);
+else if (G.scr === ‘game’)  drawGame(G.t);
+else if (G.scr === ‘fb’)    drawFeedback(G.t);
+else if (G.scr === ‘over’)  drawOver(G.t);
 
 drawPts();
 drawGrain();
 
+cx.restore();
+
 requestAnimationFrame(loop);
 }
 
+// ── BOOT — wait for DOM ready, then resize, then start loop
+window.addEventListener(‘load’, function() {
+resize();
+window.addEventListener(‘resize’, resize);
 G.lt = performance.now();
 requestAnimationFrame(loop);
+});
 </script>
 
 </body>
