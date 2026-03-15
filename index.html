@@ -24,10 +24,9 @@ canvas#cv{display:block;position:fixed;top:0;left:0;touch-action:none}
 </head>
 <body>
 <canvas id="cv"></canvas>
-<div id="errdiv" style="position:fixed;top:0;left:0;right:0;z-index:999;background:#900;color:#fff;font:13px monospace;padding:8px;display:none;white-space:pre-wrap"></div>
+<div id="errdiv" style="position:fixed;bottom:0;left:0;right:0;z-index:999;background:#900;color:#fff;font:bold 13px monospace;padding:8px;display:none;white-space:pre-wrap;word-break:break-all;max-height:40%;overflow-y:auto"></div>
 <script>
-// ── Error reporter ───────────────────────────────────────────────────
-window.onerror = function(msg,src,line,col,err){
+window.onerror=function(msg,src,line,col,err){
   var d=document.getElementById('errdiv');
   if(d){d.style.display='block';d.textContent='ERR L'+line+': '+msg+'\n'+(err&&err.stack?err.stack:'');}
   return false;
@@ -38,174 +37,112 @@ window.addEventListener('unhandledrejection',function(e){
 });
 
 // ═══════════════════════════════════════════════════════════════════
-//  LA CHULIS — exact CELLTOWER canvas pattern
-//  cv.width = SW (CSS px, no DPR), clientX direct (no rect offset),
-//  resize() before rAF, draw() guards on !SW||!SH||!R.ready
+//  LA CHULIS — CELLTOWER canvas pattern
+//  KEY FIX: requestAnimationFrame fires BEFORE the layout guard,
+//  so the loop NEVER dies even if layout isn’t ready yet.
 // ═══════════════════════════════════════════════════════════════════
 
-const cv  = document.getElementById(‘cv’);
-const CTX = cv.getContext(‘2d’);
+var cv  = document.getElementById(‘cv’);
+var CTX = cv.getContext(‘2d’);
 
-let SW, SH;   // screen dimensions — set by resize()
+var SW=0, SH=0;
 
-// ── Resize — identical to CELLTOWER ────────────────────────────────
+// ── Resize — exact CELLTOWER ────────────────────────────────────────
 function resize(){
 SW = document.documentElement.clientWidth  || window.innerWidth  || 390;
 SH = document.documentElement.clientHeight || window.innerHeight || 844;
 cv.width  = SW;
 cv.height = SH;
-cv.style.width  = SW + ‘px’;
-cv.style.height = SH + ‘px’;
+cv.style.width  = SW+‘px’;
+cv.style.height = SH+‘px’;
 computeLayout();
 }
-window.addEventListener(‘resize’, resize);
+window.addEventListener(‘resize’,resize);
 
-// Scale helper — base design 390×844
-function s(v){ return v * Math.min(SW/390, SH/844); }
+// Scale: base design 390w
+function s(v){ return v*(SW/390); }
 
-// ── Layout ─────────────────────────────────────────────────────────
-var R = {};
-var hitZones = [];
-
-function addHit(id,x,y,w,h){
-hitZones.push({id:id,x:Math.round(x),y:Math.round(y),w:Math.round(w),h:Math.round(h)});
-}
-
-function computeLayout(){
-hitZones = [];
-var PAD = Math.round(SW*0.038);
-var GAP = Math.round(SW*0.022);
-
-var HDR_H = Math.round(SH*0.068);
-var STS_H = Math.round(SH*0.058);
-var BAR_H = Math.round(SH*0.011);
-var STS_Y = HDR_H;
-var BAR_Y = STS_Y + STS_H;
-
-var SCN_Y = BAR_Y + BAR_H + Math.round(SH*0.010);
-var SCN_H = Math.round(SH*0.310);  // taller scene panel
-
-var BTM   = Math.round(SH*0.018);
-var CH_Y  = SCN_Y + SCN_H + GAP;
-var CH_H  = SH - CH_Y - BTM;
-var ROW_H = Math.floor((CH_H - GAP) / 2);
-var COL_W = Math.floor((SW - 2*PAD - GAP) / 2);
-
-R = {
-ready: true,
-PAD:PAD, GAP:GAP,
-hdr: {x:0,   y:0,     w:SW,       h:HDR_H},
-sts: {x:0,   y:STS_Y, w:SW,       h:STS_H},
-bar: {x:0,   y:BAR_Y, w:SW,       h:BAR_H},
-scn: {x:PAD, y:SCN_Y, w:SW-2*PAD, h:SCN_H},
-ch: [
-{x:PAD,         y:CH_Y,          w:COL_W, h:ROW_H},
-{x:PAD+COL_W+GAP, y:CH_Y,        w:COL_W, h:ROW_H},
-{x:PAD,         y:CH_Y+ROW_H+GAP,w:COL_W, h:ROW_H},
-{x:PAD+COL_W+GAP,y:CH_Y+ROW_H+GAP,w:COL_W,h:ROW_H},
-],
-};
-
-// Hit zones — registered once in computeLayout, exact CELLTOWER pattern
-for(var i=0;i<4;i++) addHit(‘ch’+i,R.ch[i].x,R.ch[i].y,R.ch[i].w,R.ch[i].h);
-
-// Intro start button — anchored to bottom, Y updated each frame in drawIntro
-var sbW=Math.round(SW*0.84), sbH=Math.round(SH*0.076);
-var sbX=Math.round((SW-sbW)/2);
-var sbY=Math.round(SH-sbH-Math.round(SH*0.04)); // bottom-anchored
-R.startBtn={x:sbX,y:sbY,w:sbW,h:sbH};
-addHit(‘start’,sbX,sbY,sbW,sbH);
-
-// Over restart button
-var rbW=Math.round(SW*0.84), rbH=Math.round(SH*0.076);
-var rbX=Math.round((SW-rbW)/2);
-R.restartBtn={x:rbX,w:rbW,h:rbH}; // y set dynamically in drawOver
-// placeholder hit — y updated each frame in drawOver
-addHit(‘restart’,rbX,Math.round(SH*0.76),rbW,rbH);
-}
-
-// ── Colors ─────────────────────────────────────────────────────────
-var BG   =’#120701’, DARK=’#060200’, CREAM=’#f5ead8’, GOLD=’#d4a017’;
-var GOLDD=’#6a4a08’, RED=’#c0392b’, STEAM=’#9a8878’, GREEN=’#39ff14’;
-var PURP =’#bf7fff’;
+// ── Colors ──────────────────────────────────────────────────────────
+var BG=’#120701’,DARK=’#060200’,CREAM=’#f5ead8’,GOLD=’#d4a017’;
+var GOLDD=’#5a3c08’,RED=’#c0392b’,STEAM=’#9a8878’,GREEN=’#39ff14’,PURP=’#bf7fff’;
 var RISK_C=[GREEN,GOLD,RED,PURP];
-var RISK_L=[‘LOW’,‘MEDIUM’,‘HIGH’,‘WILD’];
+var RISK_L=[‘LOW RISK’,‘MEDIUM’,‘HIGH RISK’,‘WILDCARD’];
 var RISK_E=[‘🟢’,‘🟡’,‘🔴’,‘🟣’];
 
-// ── Scenes ─────────────────────────────────────────────────────────
+// ── Scenes ──────────────────────────────────────────────────────────
 var SCENES=[
 {loc:‘THE ENTRANCE’,emj:‘🚪’,
 sign:’“La vida es corta, comete una torta”’,
-lines:[‘You pull into 802 Navajo Rd. Strip mall.’,
-‘Sign: EL RINCON LA CHULIS.’,
-‘Woman at the counter looks up briefly.’,
+lines:[‘You pull into 802 Navajo Rd.’,
+‘Sign reads: EL RINCON LA CHULIS.’,
+‘Woman at counter looks up briefly.’,
 ‘CNN alert: “CJNG Boss El Mencho's’,
 ‘Daughter Located in Perris, CA.”’,
 ‘Most chaotic Tuesday of your life.’],
-ch:[{t:‘Walk in. Order a Mexican Mocha.’,          risk:0,pts:10,sus:0,  ht:0,  ic:‘✅’,hd:‘SMART MOVE’,        he:‘The mocha is incredible. You consider a 5-star review.’},
-{t:‘Sit. Google “El Mencho daughter” loudly.’,  risk:2,pts:5, sus:25, ht:5,  ic:‘😬’,hd:‘BOLD CHOICE’,       he:‘She glances at your screen. Back to espresso. Mistake.’},
-{t:‘Photo exterior for “Sketchy Eats IE.”’,     risk:1,pts:8, sus:10, ht:0,  ic:‘📸’,hd:‘DOCUMENTED’,        he:‘Great horchata sign shot. Questionable but great content.’},
-{t:‘Call your mom and narrate everything.’,      risk:3,pts:3, sus:15, ht:10, ic:‘📞’,hd:‘MOM IS WORRIED’,    he:’“Mijo that sounds dangerous.” Dad says get chilaquiles.’}]},
+ch:[{t:‘Walk in. Order a Mexican Mocha.’,        risk:0,pts:10,sus:0, ht:0, ic:‘✅’,hd:‘SMART MOVE’,       he:‘The mocha is incredible. You consider a 5-star review.’},
+{t:‘Sit down. Google “El Mencho daughter.”’, risk:2,pts:5, sus:25,ht:5, ic:‘😬’,hd:‘BOLD CHOICE’,      he:‘She glances at your screen. Back to espresso. Mistake.’},
+{t:‘Photo exterior for Sketchy Eats IE.’,    risk:1,pts:8, sus:10,ht:0, ic:‘📸’,hd:‘DOCUMENTED’,       he:‘Great horchata sign shot. Questionable but great content.’},
+{t:‘Call your mom. Narrate everything live.’,risk:3,pts:3, sus:15,ht:10,ic:‘📞’,hd:‘MOM IS WORRIED’,   he:’“Mijo that sounds dangerous.” Dad says get chilaquiles.’}]},
 {loc:‘THE COUNTER’,emj:‘☕’,
 sign:’“Aqui el cafe tiene historia.”’,
 lines:[‘Laisha takes your order professionally.’,
 ‘Menu: tortas, molletes, chilaquiles.’,
-‘Iced Horchata Latte $7. Mocha $6.50.’,
+‘Horchata Latte $7. Mocha $6.50.’,
 ‘Strawberry Matcha also available.’,
 ‘Her earrings are gold.’,
 ‘You are staring at them. Stop that.’],
-ch:[{t:‘Horchata Latte. Say nothing else.’,         risk:0,pts:15,sus:0,  ht:0,  ic:‘🥛’,hd:‘EXCELLENT’,        he:‘Transcendent. The cinnamon is doing something spiritual.’},
-{t:‘Order everything. “I have 14 followers.”’,  risk:1,pts:12,sus:5,  ht:0,  ic:‘🍽’,hd:‘COMMITTED’,        he:‘She writes it down without blinking. Long wait ahead.’},
-{t:‘Ask if they accept crypto.’,                risk:2,pts:2, sus:30, ht:15, ic:‘💀’,hd:‘FATAL QUESTION’,    he:’“Card or cash.” You have implied something terrible.’},
-{t:’“I'll have what El Gaucho ordered.”’,      risk:3,pts:0, sus:40, ht:20, ic:‘☠’,hd:‘UNBELIEVABLE’,       he:‘El Gaucho: 11 years federal. She writes: Americano.’}]},
+ch:[{t:‘Horchata Latte. Say nothing.’,           risk:0,pts:15,sus:0, ht:0, ic:‘🥛’,hd:‘EXCELLENT’,       he:‘Transcendent. The cinnamon is doing something spiritual.’},
+{t:‘Order everything. “I have 14 followers.”’,risk:1,pts:12,sus:5,ht:0, ic:‘🍽’,hd:‘COMMITTED’,       he:‘She writes it down. Four tortas. Long wait ahead.’},
+{t:‘Ask if they accept crypto.’,              risk:2,pts:2, sus:30,ht:15,ic:‘💀’,hd:‘FATAL QUESTION’,  he:’“Card or cash.” You have implied something terrible.’},
+{t:’“I'll have what El Gaucho ordered.”’,   risk:3,pts:0, sus:40,ht:20,ic:‘☠’,hd:‘UNBELIEVABLE’,     he:‘El Gaucho: 11 years federal. She writes: Americano.’}]},
 {loc:‘YOUR TABLE’,emj:‘🪑’,
 sign:’“Good vibes, good coffee, good life.”’,
 lines:[‘White walls, plastic plants, mirrors.’,
-‘Phrases in Spanish. Telemundo on TV.’,
+‘Spanish phrases. Telemundo on TV.’,
 ‘Regulars eating tortas, scrolling phones.’,
 ‘Your drink arrives. Objectively delicious.’,
 ‘47 new texts about the CNN article.’,
 ‘You are, somehow, fine.’],
-ch:[{t:‘Drink. Read a book. Be a person.’,          risk:0,pts:20,sus:-10,ht:0,  ic:‘📖’,hd:‘ENLIGHTENED’,      he:‘40 mins. Laisha refills your water unprompted. 30% tip.’},
-{t:‘Eavesdrop neighbors. Take notes.’,          risk:1,pts:8, sus:20, ht:5,  ic:‘👂’,hd:‘AMATEUR HOUR’,     he:‘It's a quinceañera. You wrote “transfer via cake.”’},
-{t:‘Film TikTok “cozy cafe.” Tag location.’,    risk:2,pts:5, sus:35, ht:10, ic:‘📱’,hd:‘VIRAL, BRIEFLY’,   he:‘200K views. None of them good. Your aunt commented.’},
-{t:‘Write a novella about this in real time.’,  risk:3,pts:15,sus:5,  ht:0,  ic:‘✍’,hd:‘LITERARY GENIUS’,   he:‘Ch1: Horchata. Ch2: Earrings. Ch3: The Neon Sign.’}]},
+ch:[{t:‘Drink. Read a book. Be a person.’,       risk:0,pts:20,sus:-10,ht:0, ic:‘📖’,hd:‘ENLIGHTENED’,   he:‘40 mins. Laisha refills your water. You tip 30%.’},
+{t:‘Eavesdrop the next table. Take notes.’,  risk:1,pts:8, sus:20, ht:5, ic:‘👂’,hd:‘AMATEUR HOUR’,  he:‘It's a quinceañera. You wrote “possible transfer via cake.”’},
+{t:‘Film TikTok “cozy cafe.” Tag location.’, risk:2,pts:5, sus:35, ht:10,ic:‘📱’,hd:‘VIRAL, BRIEFLY’,he:‘200K views in an hour. None of them good. Aunt commented.’},
+{t:‘Write a novella about this right now.’,  risk:3,pts:15,sus:5,  ht:0, ic:‘✍’,hd:‘LITERARY GENIUS’,he:‘Ch1: Horchata. Ch2: Earrings. Ch3: The Neon Sign.’}]},
 {loc:‘BACK CORNER’,emj:‘👀’,
 sign:’“Aqui se respira familia.”’,
 lines:[‘A man enters. Speaks quietly to Laisha.’,
-‘“el abogado” … “los papeles” … “Riverside.”’,
-‘90 seconds. He leaves.’,
-‘Could be: totally normal legal paperwork.’,
-‘Could be: cartel boss estate planning.’,
+‘“el abogado” … “los papeles” …’,
+‘“Riverside.” 90 seconds. He leaves.’,
+‘Could be: totally normal legal stuff.’,
+‘Could be: cartel estate planning.’,
 ‘Could be: a dentist appointment.’],
-ch:[{t:‘Mind your business. Second drink.’,         risk:0,pts:15,sus:-5, ht:0,  ic:‘😌’,hd:‘WISE’,             he:‘Strawberry Matcha even better. This is your cafe now.’},
-{t:’“So… your dad, huh?” [finger guns]’,      risk:2,pts:0, sus:50, ht:25, ic:‘🫵’,hd:‘INCREDIBLE AUDACITY’,he:’“Excuse me?” Calm. Worse than if she had yelled.’},
-{t:‘Write down the lawyer's plate number.’,    risk:1,pts:5, sus:25, ht:15, ic:‘🚗’,hd:‘SURVEILLANCE MODE’,he:‘Plate number, zero idea what to do. Weird night ahead.’},
-{t:‘Start slowly clapping. For no reason.’,     risk:3,pts:-5,sus:45, ht:0,  ic:‘👏’,hd:‘WHAT ARE YOU DOING’,he:‘Everyone stares. You keep clapping. Leave $20. Drive away.’}]},
+ch:[{t:‘Mind your business. Second drink.’,       risk:0,pts:15,sus:-5, ht:0, ic:‘😌’,hd:‘WISE’,             he:‘Strawberry Matcha even better. This is your cafe now.’},
+{t:’“So… your dad, huh?” [finger guns]’,    risk:2,pts:0, sus:50, ht:25,ic:‘🫵’,hd:‘INCREDIBLE AUDACITY’,he:’“Excuse me?” Calm voice. Worse than if she had yelled.’},
+{t:‘Write down the lawyer's plate number.’,  risk:1,pts:5, sus:25, ht:15,ic:‘🚗’,hd:‘SURVEILLANCE MODE’,he:‘A plate number and zero idea what to do with it.’},
+{t:‘Start slowly clapping for no reason.’,    risk:3,pts:-5,sus:45, ht:0, ic:‘👏’,hd:‘WHAT ARE YOU DOING’,he:‘Everyone stares. You keep clapping. Leave $20. Drive away.’}]},
 {loc:‘THE PARKING LOT’,emj:‘🎤’,
 sign:’“No hay mal que por bien no venga.”’,
-lines:[‘A TV reporter appeared with a camera crew.’,
+lines:[‘A TV reporter appeared with camera crew.’,
 ‘Looking for Laisha. Settling for customers.’,
 ‘Camera swings toward you like a turret.’,
 ‘“Did you notice anything unusual’,
 ‘about the cafe?”’,
-‘Four seconds.’],
-ch:[{t:’“Great horchata latte. Five stars.”’,       risk:0,pts:20,sus:0,  ht:0,  ic:‘🌟’,hd:‘SMOOTH OPERATOR’, he:‘Clip airs: “Local customer praises beverage.” Reasonable.’},
-{t:’“I cannot comment at this time.”’,          risk:1,pts:10,sus:10, ht:20, ic:‘🤐’,hd:‘SUSPICIOUS AS HELL’,he:’“Customer Refuses Comment.” Neighbors will see this.’},
-{t:‘Say everything. All of it. 18 minutes.’,    risk:2,pts:5, sus:30, ht:30, ic:‘🎬’,hd:‘TALKED TOO LONG’,  he:‘You mention El Gaucho by name. Mom calls mid-segment.’},
-{t:‘Grab mic. Do a live Matcha review.’,        risk:3,pts:25,sus:5,  ht:0,  ic:‘📺’,hd:‘CONTENT KING’,     he:’“Hibiscus notes…” 400K views. Laisha DMs: “ty”’}]},
+‘You have four seconds.’],
+ch:[{t:’“Great horchata latte. Five stars.”’,     risk:0,pts:20,sus:0, ht:0, ic:‘🌟’,hd:‘SMOOTH OPERATOR’, he:‘Clip airs: “Local customer praises beverage.” Reasonable.’},
+{t:’“I cannot comment at this time.”’,        risk:1,pts:10,sus:10,ht:20,ic:‘🤐’,hd:‘SUSPICIOUS AS HELL’,he:’“Customer Refuses Comment.” Your neighbors will see this.’},
+{t:‘Say everything. All of it. 18 minutes.’,  risk:2,pts:5, sus:30,ht:30,ic:‘🎬’,hd:‘TALKED TOO LONG’,  he:‘You mention El Gaucho by name. Mom calls mid-segment.’},
+{t:‘Grab mic. Do a live Matcha review.’,      risk:3,pts:25,sus:5, ht:0, ic:‘📺’,hd:‘CONTENT KING’,     he:’“Hibiscus notes…” 400K views. Laisha DMs: “ty”’}]},
 {loc:‘BACK INSIDE’,emj:‘💅’,
 sign:’“Familia primero.”’,
 lines:[‘You went back in. Don't judge yourself.’,
 ‘A second woman — older, sharper.’,
 ‘Air of someone who did 25 months federal’,
 ‘and came out with better posture.’,
-‘La Negra. Eating torta de mole.’,
+‘La Negra. Eating a torta de mole.’,
 ‘Reading legal documents.’],
-ch:[{t:‘Nod politely. Back to your drink.’,         risk:0,pts:20,sus:-5, ht:0,  ic:‘🤝’,hd:‘CLASS ACT’,        he:‘She nods back. Two adults in a cafe. Correct behavior.’},
-{t:‘Ask if she knows good tequila brands.’,     risk:2,pts:0, sus:35, ht:35, ic:‘🥃’,hd:‘ABSOLUTE MENACE’,  he:‘She ran Onze Black Tequila (CJNG money). “Why.” No answer.’},
-{t:‘Loudly: “Restaurant biz here is CLEAN.”’,  risk:1,pts:5, sus:20, ht:10, ic:‘📢’,hd:‘EMPHASIS NOTED’,    he:‘She puts down the document. Nobody believes you.’},
-{t:‘Slide her a fake “True Crime Podcast” card.’,risk:3,pts:10,sus:40,ht:5,  ic:‘🎙’,hd:‘MANIFESTING’,      he:‘She pockets it. You now have to start a podcast.’}]},
+ch:[{t:‘Nod politely. Back to your drink.’,       risk:0,pts:20,sus:-5, ht:0, ic:‘🤝’,hd:‘CLASS ACT’,        he:‘She nods back. Two adults in a cafe. Correct behavior.’},
+{t:‘Ask if she knows good tequila brands.’,   risk:2,pts:0, sus:35, ht:35,ic:‘🥃’,hd:‘ABSOLUTE MENACE’,  he:‘She ran Onze Black Tequila (CJNG money). “Why.” No answer.’},
+{t:‘Loudly: “The restaurant biz here is CLEAN.”’,risk:1,pts:5,sus:20,ht:10,ic:‘📢’,hd:‘EMPHASIS NOTED’, he:‘She puts down the document. Nobody believes you.’},
+{t:‘Slide her a fake True Crime Podcast card.’,risk:3,pts:10,sus:40,ht:5, ic:‘🎙’,hd:‘MANIFESTING’,      he:‘She pockets it. You now have to start a podcast.’}]},
 {loc:‘BATHROOM HALLWAY’,emj:‘🕴’,
 sign:’“Sonrie, estas en familia.”’,
 lines:[‘You bump into a man in the hallway.’,
@@ -214,10 +151,10 @@ lines:[‘You bump into a man in the hallway.’,
 ‘“Just a customer,” he says.’,
 ‘“Did you notice anything?”’,
 ‘You are a person of interest. For coffee.’],
-ch:[{t:’“Great horchata. Solid cafe. I'm good.”’, risk:0,pts:20,sus:0,  ht:-10,ic:‘🧘’,hd:‘DIPLOMATICALLY IMMUNE’,he:‘Three groups, zero info given. Practically a spy.’},
-{t:‘Tell him everything you know.’,             risk:1,pts:8, sus:0,  ht:-20,ic:‘📋’,hd:‘CIVIC DUTY DONE’,  he:‘25 minutes. Most paperwork a horchata has ever caused.’},
-{t:‘Ask to see a badge. Loudly. In the cafe.’,  risk:2,pts:5, sus:50, ht:20, ic:‘🪪’,hd:‘EVERYONE HEARD THAT’,he:‘Cafe goes quiet. La Negra eats. Laisha makes espresso.’},
-{t:‘Hand him your novella as evidence.’,        risk:3,pts:30,sus:5,  ht:-5, ic:‘📚’,hd:‘LITERARY EVIDENCE’,he:’“Chapter 3: The Earrings.” “Pretty good.” Cards exchanged.’}]},
+ch:[{t:’“Great horchata. Solid cafe. I'm good.”’,risk:0,pts:20,sus:0, ht:-10,ic:‘🧘’,hd:‘DIPLOMATICALLY IMMUNE’,he:‘Three groups, zero info given. Practically a spy.’},
+{t:‘Tell him everything you know.’,            risk:1,pts:8, sus:0, ht:-20,ic:‘📋’,hd:‘CIVIC DUTY DONE’,  he:‘25 minutes in the lot. Most paperwork a horchata caused.’},
+{t:‘Ask to see a badge. Loudly. In the cafe.’,risk:2,pts:5, sus:50,ht:20, ic:‘🪪’,hd:‘EVERYONE HEARD THAT’,he:‘Cafe goes quiet. La Negra eats. Laisha makes espresso.’},
+{t:‘Hand him your novella as evidence.’,       risk:3,pts:30,sus:5, ht:-5, ic:‘📚’,hd:‘LITERARY EVIDENCE’,he:’“Chapter 3: The Earrings.” “Pretty good.” Cards exchanged.’}]},
 {loc:‘THE FINAL CALL’,emj:‘🏁’,
 sign:’“Hasta luego, y gracias.”’,
 lines:[‘Three hours. Two drinks.’,
@@ -226,67 +163,150 @@ lines:[‘Three hours. Two drinks.’,
 ‘Laisha closing early. News vans outside.’,
 ‘’,
 ‘One final choice.’],
-ch:[{t:’“Great horchata. Will return.” Yelp. Done.’,risk:0,pts:30,sus:0,  ht:0,  ic:‘⭐’,hd:‘LEGEND’,           he:‘847 upvotes. WSJ: “Most Californian statement of decade.”’},
-{t:‘Leave 1-star review: “Weird energy.”’,      risk:2,pts:-20,sus:20,ht:0,  ic:‘💀’,hd:‘COWARD’,           he:‘Ratio'd instantly. 2000 replies: “DRINKS ARE AMAZING.”’},
-{t:‘Tip $100. Say nothing. Walk into sunset.’,  risk:1,pts:25,sus:-20,ht:-10,ic:‘💰’,hd:‘MYTHIC ENERGY’,     he:‘Nobody knows who you are. Best, most confusing customer.’},
-{t:‘Ask for WiFi password. Sit back down.’,     risk:3,pts:40,sus:10, ht:0,  ic:‘📶’,hd:‘INCREDIBLE COMMITMENT’,he:’“Chulis2018.” You finish the novella. This is your cafe now.’}]},
+ch:[{t:’“Great horchata. Will return.” Yelp.’,    risk:0,pts:30,sus:0,  ht:0,  ic:‘⭐’,hd:‘LEGEND’,            he:‘847 upvotes. WSJ: “Most Californian statement of decade.”’},
+{t:‘Leave 1-star review: “Weird energy.”’,    risk:2,pts:-20,sus:20,ht:0,  ic:‘💀’,hd:‘COWARD’,             he:‘Ratio'd instantly. 2000 replies: “DRINKS ARE AMAZING.”’},
+{t:‘Tip $100. Say nothing. Walk into sunset.’,risk:1,pts:25,sus:-20,ht:-10,ic:‘💰’,hd:‘MYTHIC ENERGY’,       he:‘Nobody knows who you are. Best and most confusing customer.’},
+{t:‘Ask for WiFi password. Sit back down.’,   risk:3,pts:40,sus:10, ht:0,  ic:‘📶’,hd:‘INCREDIBLE COMMITMENT’,he:’“Chulis2018.” You finish the novella. This is your cafe now.’}]},
 ];
 
-// ── State ───────────────────────────────────────────────────────────
+// ── State ────────────────────────────────────────────────────────────
 var G={scr:‘intro’,si:0,score:0,sus:0,heat:0,fb:null,fbt:0,end:null,t:0,lt:0,pts:[]};
 
-// ── Input — exact CELLTOWER pattern ────────────────────────────────
-// canvas is position:fixed top:0 left:0, so clientX IS canvas coords — no offset needed
+// ── Layout ───────────────────────────────────────────────────────────
+var R={ready:false};
+var hitZones=[];
+
+function addHit(id,x,y,w,h){
+hitZones.push({id:id,x:Math.round(x),y:Math.round(y),w:Math.round(w),h:Math.round(h)});
+}
+
+function computeLayout(){
+hitZones=[];
+var PAD=Math.round(SW*0.036);
+var GAP=Math.round(SW*0.020);
+
+// Header — title + address
+var HDR_H=Math.round(SH*0.072);
+// Status row — TURN SCORE HEAT SUS
+var STS_H=Math.round(SH*0.065);
+var STS_Y=HDR_H;
+// Sus bar
+var BAR_H=Math.round(SH*0.012);
+var BAR_Y=STS_Y+STS_H;
+// Scene panel
+var SCN_Y=BAR_Y+BAR_H+GAP;
+var SCN_H=Math.round(SH*0.310);
+// Choice button area — everything below scene panel
+var BTM=Math.round(SH*0.016);
+var CH_Y=SCN_Y+SCN_H+GAP;
+var CH_H=SH-CH_Y-BTM;
+var ROW_H=Math.floor((CH_H-GAP)/2);
+var COL_W=Math.floor((SW-2*PAD-GAP)/2);
+
+// Intro/over button — bottom-anchored
+var sbH=Math.round(SH*0.078);
+var sbX=Math.round(SW*0.08);
+var sbY=Math.round(SH-sbH-Math.round(SH*0.032));
+
+R={
+ready:true,
+PAD:PAD,GAP:GAP,
+hdr:{x:0,y:0,w:SW,h:HDR_H},
+sts:{x:0,y:STS_Y,w:SW,h:STS_H},
+bar:{x:0,y:BAR_Y,w:SW,h:BAR_H},
+scn:{x:PAD,y:SCN_Y,w:SW-2*PAD,h:SCN_H},
+ch:[
+{x:PAD,           y:CH_Y,           w:COL_W,h:ROW_H},
+{x:PAD+COL_W+GAP, y:CH_Y,           w:COL_W,h:ROW_H},
+{x:PAD,           y:CH_Y+ROW_H+GAP, w:COL_W,h:ROW_H},
+{x:PAD+COL_W+GAP, y:CH_Y+ROW_H+GAP,w:COL_W,h:ROW_H},
+],
+sbH:sbH, sbX:sbX, sbY:sbY,
+sbW:Math.round(SW*0.84),
+};
+
+// Hit zones are rebuilt per-screen in rebuildHitZones()
+rebuildHitZones();
+}
+
+function rebuildHitZones(){
+hitZones=[];
+if(G.scr===‘intro’||G.scr===‘over’){
+// Only the single bottom button — no game buttons
+addHit(G.scr===‘intro’?‘start’:‘restart’, R.sbX, R.sbY, R.sbW, R.sbH);
+} else if(G.scr===‘game’||G.scr===‘fb’){
+// Four choice buttons only
+for(var i=0;i<4;i++) addHit(‘ch’+i,R.ch[i].x,R.ch[i].y,R.ch[i].w,R.ch[i].h);
+}
+}
+
+// ── Input ────────────────────────────────────────────────────────────
 function hitTest(tx,ty){
-// scan in reverse — last-registered wins (same as CELLTOWER)
 for(var i=hitZones.length-1;i>=0;i–){
 var z=hitZones[i];
 if(tx>=z.x&&tx<=z.x+z.w&&ty>=z.y&&ty<=z.y+z.h) return z.id;
 }
 return null;
 }
-
 function handleTap(tx,ty){
 var id=hitTest(tx,ty);
 if(G.scr===‘intro’){
-if(id===‘start’) G.scr=‘game’;
+if(id===‘start’){ G.scr=‘game’; rebuildHitZones(); }
 return;
 }
 if(G.scr===‘over’){
-if(id===‘restart’) resetGame();
+if(id===‘restart’){ resetGame(); return; }
 return;
 }
 if(G.scr===‘game’){
 for(var i=0;i<4;i++) if(id===‘ch’+i){ doChoice(i); return; }
 }
-// fb screen: taps do nothing (auto-advances)
+// fb screen: taps do nothing, auto-advances
 }
+
+function getCanvasXY(clientX, clientY){
+// Use getBoundingClientRect so we work correctly inside iframes too
+var r=cv.getBoundingClientRect();
+// Scale from CSS pixels to canvas pixels (cv.width may differ from CSS width if DPR scaling)
+var scaleX = cv.width  / (r.width  || SW);
+var scaleY = cv.height / (r.height || SH);
+return {
+x: (clientX - r.left) * scaleX,
+y: (clientY - r.top)  * scaleY
+};
+}
+
+// Debug: show last tap position on canvas for 1 second
+var _dbgTap = null;
 
 cv.addEventListener(‘touchstart’,function(e){
 e.preventDefault();
 for(var i=0;i<e.changedTouches.length;i++){
-handleTap(e.changedTouches[i].clientX, e.changedTouches[i].clientY);
+var p=getCanvasXY(e.changedTouches[i].clientX, e.changedTouches[i].clientY);
+_dbgTap={x:p.x,y:p.y,t:G.t};
+handleTap(p.x, p.y);
 }
 },{passive:false});
+cv.addEventListener(‘touchmove’, function(e){e.preventDefault();},{passive:false});
+cv.addEventListener(‘touchend’,  function(e){e.preventDefault();},{passive:false});
+cv.addEventListener(‘touchcancel’,function(e){e.preventDefault();},{passive:false});
+cv.addEventListener(‘mousedown’, function(e){
+var p=getCanvasXY(e.clientX,e.clientY);
+_dbgTap={x:p.x,y:p.y,t:G.t};
+handleTap(p.x,p.y);
+});
 
-cv.addEventListener(‘touchmove’,function(e){ e.preventDefault(); },{passive:false});
-cv.addEventListener(‘touchend’, function(e){ e.preventDefault(); },{passive:false});
-cv.addEventListener(‘touchcancel’,function(e){ e.preventDefault(); },{passive:false});
-
-// Mouse fallback (desktop testing)
-cv.addEventListener(‘mousedown’,function(e){ handleTap(e.clientX,e.clientY); });
-
-// ── Particles ───────────────────────────────────────────────────────
+// ── Particles ────────────────────────────────────────────────────────
 function spawnPts(x,y,col,n){
 for(var i=0;i<(n||10);i++)
-G.pts.push({x:x,y:y,vx:(Math.random()-.5)*5,vy:-Math.random()*6-1,life:1,col:col,r:Math.random()*3+2});
+G.pts.push({x:x,y:y,vx:(Math.random()-.5)*6,vy:-Math.random()*7-2,life:1,col:col,r:Math.random()*4+2});
 }
 function tickPts(dt){
 var a=[];
 for(var i=0;i<G.pts.length;i++){
 var p=G.pts[i];
-p.x+=p.vx*dt*60;p.y+=p.vy*dt*60;p.vy+=.18*dt*60;p.life-=dt*1.8;
-if(p.life>0) a.push(p);
+p.x+=p.vx*dt*60;p.y+=p.vy*dt*60;p.vy+=.20*dt*60;p.life-=dt*1.6;
+if(p.life>0)a.push(p);
 }
 G.pts=a;
 }
@@ -299,7 +319,7 @@ CTX.beginPath();CTX.arc(p.x,p.y,p.r,0,Math.PI*2);CTX.fill();
 CTX.globalAlpha=1;
 }
 
-// ── Draw helpers ────────────────────────────────────────────────────
+// ── Draw helpers ──────────────────────────────────────────────────────
 function rr(x,y,w,h,r){
 CTX.beginPath();
 CTX.moveTo(x+r,y);
@@ -309,150 +329,146 @@ CTX.closePath();
 }
 function fillRR(x,y,w,h,r,c){CTX.fillStyle=c;rr(x,y,w,h,r);CTX.fill();}
 function strokeRR(x,y,w,h,r,c,lw){CTX.strokeStyle=c;CTX.lineWidth=lw||1;rr(x,y,w,h,r);CTX.stroke();}
-
-var FD=’“Arial Black”,“Impact”,sans-serif’;
-var FM=’“Courier New”,monospace’;
-
-function tf(str,x,y,sz,col,align,mw,bold,mono){
-CTX.font=(bold?‘bold ‘:’’)+Math.round(sz)+’px ’+(mono?FM:FD);
-CTX.fillStyle=col;CTX.textAlign=align||‘left’;CTX.textBaseline=‘alphabetic’;
-if(mw) CTX.fillText(str,x,y,mw); else CTX.fillText(str,x,y);
-}
 function glow(c,b){CTX.shadowColor=c;CTX.shadowBlur=b;}
 function ng(){CTX.shadowBlur=0;}
 
-function wrapTxt(str,mw,sz,mono){
-CTX.font=Math.round(sz)+‘px ‘+(mono?FM:FD);
+// Font stacks — no external fonts needed, all system fonts
+var FD=’“Arial Black”,“Impact”,“Arial Bold”,sans-serif’;  // display/bold
+var FM=’“Courier New”,“Courier”,monospace’;               // mono/body
+
+function wrapTxt(str,maxW,sz){
+CTX.font=Math.round(sz)+‘px ‘+FM;
 var words=str.split(’ ‘),lines=[],line=’’;
 for(var i=0;i<words.length;i++){
 var w=words[i],test=line?line+’ ’+w:w;
-if(CTX.measureText(test).width>mw&&line){lines.push(line);line=w;}
+if(CTX.measureText(test).width>maxW&&line){lines.push(line);line=w;}
 else line=test;
 }
-if(line) lines.push(line);
+if(line)lines.push(line);
 return lines;
 }
 
-// Grain — same pattern as CELLTOWER (generated per-frame-group)
-var _grainCache=null,_grainFrame=-1;
+// Grain overlay — pre-baked offscreen canvas, redrawn every ~6 frames
+var _grain=null,_grainT=0;
 function drawGrain(){
-var fr=Math.floor(G.t*30)|0;
-if(fr!==_grainFrame){
-_grainFrame=fr;
+var now=G.t;
+if(!_grain||(now-_grainT)>0.1){
+_grainT=now;
+var gw=128,gh=128;
 var tmp=document.createElement(‘canvas’);
-tmp.width=128;tmp.height=128;
+tmp.width=gw;tmp.height=gh;
 var tc=tmp.getContext(‘2d’);
-var id=tc.createImageData(128,128);
+if(tc){
+var id=tc.createImageData(gw,gh);
 var d=id.data;
-for(var i=0;i<d.length;i+=4){var v=Math.random()*18|0;d[i]=d[i+1]=d[i+2]=v;d[i+3]=11;}
+for(var i=0;i<d.length;i+=4){var v=Math.random()*20|0;d[i]=d[i+1]=d[i+2]=v;d[i+3]=13;}
 tc.putImageData(id,0,0);
-_grainCache=tmp;
+_grain=tmp;
 }
-if(_grainCache){
-CTX.globalAlpha=0.28;
-CTX.fillStyle=CTX.createPattern(_grainCache,‘repeat’);
-CTX.fillRect(0,0,SW,SH);
-CTX.globalAlpha=1;
+}
+if(_grain){
+try{
+var pat=CTX.createPattern(_grain,‘repeat’);
+if(pat){CTX.globalAlpha=0.28;CTX.fillStyle=pat;CTX.fillRect(0,0,SW,SH);CTX.globalAlpha=1;}
+}catch(e){}
 }
 }
 
 // ════════════════════════════════════════════════════════════════════
-//  SCREEN RENDERERS
+//  SCREENS
 // ════════════════════════════════════════════════════════════════════
 
 function drawIntro(t){
+// BG
 CTX.fillStyle=’#0a0300’;CTX.fillRect(0,0,SW,SH);
-var g=CTX.createRadialGradient(SW/2,SH*.28,0,SW/2,SH*.28,SW*.75);
-g.addColorStop(0,‘rgba(70,25,5,.55)’);g.addColorStop(1,‘rgba(0,0,0,0)’);
+var g=CTX.createRadialGradient(SW/2,SH*.3,0,SW/2,SH*.3,SW*.8);
+g.addColorStop(0,‘rgba(80,30,5,.5)’);g.addColorStop(1,‘rgba(0,0,0,0)’);
 CTX.fillStyle=g;CTX.fillRect(0,0,SW,SH);
 
-// Steam wisps
-for(var i=0;i<3;i++){
-var sx=SW*(.28+i*.22);
-var ph=((t*.5+i*1.7)%1)*SH*.55;
-CTX.strokeStyle=‘rgba(255,180,60,.04)’;CTX.lineWidth=s(2);
-CTX.beginPath();
-CTX.moveTo(sx+Math.sin(t*.8+i)*s(12),SH-ph);
-CTX.quadraticCurveTo(sx+Math.cos(t+i)*s(18),SH-ph-s(60),sx+Math.sin(t+i+1)*s(10),SH-ph-s(110));
-CTX.stroke();
-}
+var ctr=SW/2, y=SH*0.04;
 
-var ctr=SW/2, y=SH*.05, tsz=s(50);
-
-glow(GOLD,18);
+// Title
+var tsz=s(54);
+glow(GOLD,20);
 CTX.font=’bold ’+Math.round(tsz)+’px ’+FD;
 CTX.fillStyle=GOLD;CTX.textAlign=‘center’;CTX.textBaseline=‘alphabetic’;
 CTX.fillText(‘EL RINCON’,ctr,y+tsz);
-CTX.fillText(‘LA CHULIS’,ctr,y+tsz*2+s(4));
+CTX.fillText(‘LA CHULIS’,ctr,y+tsz*2+s(6));
 ng();
-CTX.globalAlpha=.28;CTX.fillStyle=RED;
-CTX.fillText(‘LA CHULIS’,ctr+s(3),y+tsz*2+s(8));
+CTX.globalAlpha=.25;CTX.fillStyle=RED;
+CTX.fillText(‘LA CHULIS’,ctr+s(4),y+tsz*2+s(10));
 CTX.globalAlpha=1;
+y+=tsz*2.4+s(12);
 
-y+=tsz*2.3+s(10);
-CTX.font=Math.round(s(10))+’px ’+FM;
+// Subtitle
+CTX.font=Math.round(s(12))+’px ’+FM;
 CTX.fillStyle=STEAM;CTX.textAlign=‘center’;CTX.textBaseline=‘alphabetic’;
-CTX.fillText(‘COFFEE · CARTEL LEGACY · QUESTIONABLE CHOICES’,ctr,y,SW-s(28));
-y+=s(18);
+CTX.fillText(‘COFFEE · CARTEL LEGACY · QUESTIONABLE CHOICES’,ctr,y,SW-s(20));
+y+=s(20);
 
+// Divider
 CTX.strokeStyle=GOLDD;CTX.lineWidth=1;
-CTX.beginPath();CTX.moveTo(s(28),y);CTX.lineTo(SW-s(28),y);CTX.stroke();
-y+=s(14);
+CTX.beginPath();CTX.moveTo(s(24),y);CTX.lineTo(SW-s(24),y);CTX.stroke();
+y+=s(16);
 
-var lf=Math.round(s(11));
-var lh=s(16);
-var lore=[[‘PERRIS, CA.  802 Navajo Rd.  A strip mall.’,true],
-[’’,false],
+// Lore — bigger font
+var lf=Math.round(s(14));
+var lh=s(22);
+CTX.textAlign=‘left’;CTX.textBaseline=‘alphabetic’;
+var lore=[
+[‘PERRIS, CA.  802 Navajo Rd.  Strip mall.’,true],
 [‘LAISHA OSEGUERA GONZALEZ, 24,’,true],
-[‘business student. Daughter of El Mencho –’,false],
+[‘business student. Daughter of El Mencho —’,false],
 [‘CJNG boss, killed Feb 22 in military op.’,false],
-[‘Husband El Gaucho: 11 yrs federal.’,false],
+[‘Husband El Gaucho: 11 years federal.’,false],
 [‘Sister La Negra: 25 months money laundering.’,false],
 [‘Brother: life sentence.’,false],
 [’’,false],
-[‘You are a customer.  A suspicious one.’,false]];
+[‘You are a customer.  A suspicious one.’,false],
+];
 for(var i=0;i<lore.length;i++){
 if(lore[i][0]){
-CTX.font=(lore[i][1]?‘bold ‘:’’)+lf+’px ’+FM;
-CTX.fillStyle=lore[i][1]?GOLD:CREAM;CTX.textAlign=‘left’;CTX.textBaseline=‘alphabetic’;
-CTX.fillText(lore[i][0],s(22),y,SW-s(28));
+CTX.font=(lore[i][1]?‘bold ‘:’’)+lf+‘px ‘+(lore[i][1]?FD:FM);
+CTX.fillStyle=lore[i][1]?GOLD:CREAM;
+CTX.fillText(lore[i][0],s(20),y,SW-s(24));
 }
-y+=lh;
+y+=lore[i][0]===’’?s(8):lh;
 }
-y+=s(6);
+y+=s(10);
 
 // Rules box
-var rbH=s(96);
-fillRR(s(14),y,SW-s(28),rbH,s(7),‘rgba(255,255,255,.03)’);
-strokeRR(s(14),y,SW-s(28),rbH,s(7),‘rgba(212,160,23,.2)’);
-CTX.font=’bold ’+Math.round(s(10))+’px ’+FD;CTX.fillStyle=GOLD;CTX.textAlign=‘left’;CTX.textBaseline=‘alphabetic’;
-CTX.fillText(‘HOW TO PLAY’,s(26),y+s(16));
-var rules=[‘4 choices each turn — like a spinner.’,
+var rbH=s(110);
+if(y+rbH<R.sbY-s(16)){
+fillRR(s(14),y,SW-s(28),rbH,s(8),‘rgba(255,255,255,.04)’);
+strokeRR(s(14),y,SW-s(28),rbH,s(8),‘rgba(212,160,23,.2)’);
+CTX.font=’bold ’+Math.round(s(13))+’px ’+FD;CTX.fillStyle=GOLD;CTX.textAlign=‘left’;CTX.textBaseline=‘alphabetic’;
+CTX.fillText(‘HOW TO PLAY’,s(24),y+s(20));
+var rules=[‘4 choices per turn — like a spinner.’,
 ‘Low / Medium / High / Wildcard risk.’,
-‘Suspicion 100% — Laisha makes a call.’,
-‘Heat 100% — DEA wants a word.’,
+‘Suspicion hits 100% → Laisha calls someone.’,
+‘Heat hits 100% → DEA wants a word.’,
 ‘Goal: max Cafe Score before getting bounced.’];
-CTX.font=Math.round(s(10))+’px ’+FM;
+CTX.font=Math.round(s(13))+’px ’+FM;
 for(var i=0;i<rules.length;i++){
 CTX.fillStyle=i===0?CREAM:STEAM;
-CTX.fillText(rules[i],s(26),y+s(30)+i*s(14),SW-s(50));
+CTX.fillText(rules[i],s(24),y+s(38)+i*s(16),SW-s(40));
 }
-y+=rbH+s(10);
+}
 
-// Start button — anchored to bottom, hit zone updated every frame
-var btn=R.startBtn;
-var btnY=btn.y; // bottom-anchored in computeLayout
-for(var _hi=0;_hi<hitZones.length;_hi++){
-if(hitZones[_hi].id===‘start’){hitZones[_hi].y=Math.round(btnY);hitZones[_hi].h=Math.round(btn.h);break;}
+// Start button — bottom-anchored, hit zone updated every frame
+var btnY=R.sbY;
+for(var i=0;i<hitZones.length;i++){
+if(hitZones[i].id===‘start’){hitZones[i].y=Math.round(btnY);hitZones[i].h=R.sbH;break;}
 }
 var pulse=.82+Math.sin(t*2.8)*.18;
-CTX.globalAlpha=pulse;fillRR(btn.x,btnY,btn.w,btn.h,s(10),GOLD);CTX.globalAlpha=1;
-CTX.font=’bold ’+Math.round(s(17))+‘px ‘+FD;
+CTX.globalAlpha=pulse;
+fillRR(R.sbX,btnY,R.sbW,R.sbH,s(10),GOLD);
+CTX.globalAlpha=1;
+CTX.font=’bold ’+Math.round(s(20))+‘px ‘+FD;
 CTX.fillStyle=’#140800’;CTX.textAlign=‘center’;CTX.textBaseline=‘middle’;
-CTX.fillText(‘ENTER EL RINCON’,btn.x+btn.w/2,btnY+btn.h/2);
+CTX.fillText(‘ENTER EL RINCON’,R.sbX+R.sbW/2,btnY+R.sbH/2);
 
-// Disclaimer just above button
-CTX.font=Math.round(s(8))+‘px ‘+FM;
+CTX.font=Math.round(s(9))+‘px ‘+FM;
 CTX.fillStyle=‘rgba(255,255,255,.18)’;CTX.textAlign=‘center’;CTX.textBaseline=‘alphabetic’;
 CTX.fillText(’[ Hightower live ] — Claude AI / Anthropic — Satire’,ctr,btnY-s(8),SW-s(16));
 }
@@ -463,41 +479,41 @@ CTX.fillStyle=BG;CTX.fillRect(0,0,SW,SH);
 
 // ── Header ──────────────────────────────────────────────────────────
 var hr=R.hdr;
-CTX.fillStyle=DARK;CTX.fillRect(0,0,SW,hr.h+s(6));
+CTX.fillStyle=DARK;CTX.fillRect(0,0,SW,hr.h+s(4));
 CTX.strokeStyle=GOLD;CTX.lineWidth=1.5;
 CTX.beginPath();CTX.moveTo(0,hr.h);CTX.lineTo(SW,hr.h);CTX.stroke();
-
-// Title — bigger, takes full header height
-CTX.font=’bold ’+Math.round(s(17))+’px ’+FD;
+CTX.font=’bold ’+Math.round(s(18))+’px ’+FD;
 CTX.fillStyle=GOLD;CTX.textAlign=‘center’;CTX.textBaseline=‘middle’;
-glow(GOLD,8);CTX.fillText(‘EL RINCON LA CHULIS’,SW/2,hr.h*0.40);ng();
-CTX.font=Math.round(s(10))+’px ’+FM;CTX.fillStyle=STEAM;CTX.textBaseline=‘middle’;
-CTX.fillText(‘802 Navajo Rd · Perris, CA’,SW/2,hr.h*0.78);
+glow(GOLD,8);CTX.fillText(‘EL RINCON LA CHULIS’,SW/2,hr.h*0.42);ng();
+CTX.font=Math.round(s(11))+’px ’+FM;CTX.fillStyle=STEAM;CTX.textBaseline=‘middle’;
+CTX.fillText(‘802 Navajo Rd · Perris, CA’,SW/2,hr.h*0.80);
 
-// Neon sign — tucked below header line
+// Neon sign flicker under header
 var flk=Math.random()>.015?1:.25;
 CTX.globalAlpha=flk;glow(GREEN,5);
-CTX.font=’italic ’+Math.round(s(9))+’px ’+FM;CTX.fillStyle=‘rgba(57,255,20,.6)’;
-CTX.textBaseline=‘alphabetic’;
-CTX.fillText(sc.sign,SW/2,hr.h+s(8),SW-s(10));
+CTX.font=’italic ’+Math.round(s(10))+’px ’+FM;
+CTX.fillStyle=‘rgba(57,255,20,.55)’;CTX.textBaseline=‘alphabetic’;CTX.textAlign=‘center’;
+CTX.fillText(sc.sign,SW/2,hr.h+s(9),SW-s(8));
 ng();CTX.globalAlpha=1;
 
 // ── Status row ──────────────────────────────────────────────────────
-var sr=R.sts, sw4=SW/4;
+var sr=R.sts,sw4=SW/4;
 var stats=[{l:‘TURN’,v:(G.si+1)+’/8’},{l:‘SCORE’,v:G.score},{l:‘HEAT’,v:G.heat},{l:‘SUS’,v:G.sus+’%’}];
-CTX.textBaseline=‘alphabetic’;
 for(var i=0;i<4;i++){
 var sx=i*sw4;
-if(i>0){CTX.strokeStyle=‘rgba(212,160,23,.15)’;CTX.lineWidth=1;
-CTX.beginPath();CTX.moveTo(sx,sr.y+s(3));CTX.lineTo(sx,sr.y+sr.h-s(3));CTX.stroke();}
-CTX.font=Math.round(s(9))+’px ’+FD;CTX.fillStyle=STEAM;CTX.textAlign=‘center’;
-CTX.fillText(stats[i].l,sx+sw4/2,sr.y+sr.h*0.38);
+if(i>0){
+CTX.strokeStyle=‘rgba(212,160,23,.15)’;CTX.lineWidth=1;
+CTX.beginPath();CTX.moveTo(sx,sr.y+s(4));CTX.lineTo(sx,sr.y+sr.h-s(4));CTX.stroke();
+}
+CTX.font=Math.round(s(10))+’px ’+FD;CTX.fillStyle=STEAM;
+CTX.textAlign=‘center’;CTX.textBaseline=‘alphabetic’;
+CTX.fillText(stats[i].l,sx+sw4/2,sr.y+sr.h*0.40);
 var vc=((stats[i].l===‘SUS’&&G.sus>65)||(stats[i].l===‘HEAT’&&G.heat>65))?RED:GOLD;
-CTX.font=’bold ’+Math.round(s(17))+’px ’+FD;CTX.fillStyle=vc;
-CTX.fillText(String(stats[i].v),sx+sw4/2,sr.y+sr.h*0.90);
+CTX.font=’bold ’+Math.round(s(19))+’px ’+FD;CTX.fillStyle=vc;
+CTX.fillText(String(stats[i].v),sx+sw4/2,sr.y+sr.h*0.92);
 }
 
-// ── Sus gradient bar ─────────────────────────────────────────────────
+// ── Sus bar ─────────────────────────────────────────────────────────
 var br=R.bar;
 CTX.fillStyle=‘rgba(255,255,255,.07)’;CTX.fillRect(0,br.y,SW,br.h);
 var sg=CTX.createLinearGradient(0,0,SW,0);
@@ -506,94 +522,86 @@ CTX.fillStyle=sg;CTX.fillRect(0,br.y,(G.sus/100)*SW,br.h);
 
 // ── Scene panel ──────────────────────────────────────────────────────
 var scn=R.scn;
-fillRR(scn.x,scn.y,scn.w,scn.h,s(8),‘rgba(0,0,0,.5)’);
-strokeRR(scn.x,scn.y,scn.w,scn.h,s(8),‘rgba(212,160,23,.25)’);
+fillRR(scn.x,scn.y,scn.w,scn.h,s(8),‘rgba(0,0,0,.55)’);
+strokeRR(scn.x,scn.y,scn.w,scn.h,s(8),‘rgba(212,160,23,.3)’);
 
-// Location badge — sits on top border of panel
+// Location badge
 CTX.strokeStyle=‘rgba(192,57,43,.5)’;CTX.lineWidth=1;
-CTX.beginPath();CTX.moveTo(scn.x+s(8),scn.y-s(7));CTX.lineTo(scn.x+s(36),scn.y-s(7));CTX.stroke();
-CTX.font=’bold ’+Math.round(s(11))+’px ’+FD;CTX.fillStyle=RED;
-CTX.textAlign=‘left’;CTX.textBaseline=‘alphabetic’;
+CTX.beginPath();CTX.moveTo(scn.x+s(8),scn.y-s(8));CTX.lineTo(scn.x+s(36),scn.y-s(8));CTX.stroke();
+CTX.font=’bold ’+Math.round(s(12))+’px ’+FD;
+CTX.fillStyle=RED;CTX.textAlign=‘left’;CTX.textBaseline=‘alphabetic’;
 CTX.fillText(sc.loc,scn.x+s(42),scn.y-s(2));
 var _lw=CTX.measureText(sc.loc).width;
-CTX.beginPath();CTX.moveTo(scn.x+s(42)+_lw+s(6),scn.y-s(7));CTX.lineTo(scn.x+scn.w-s(8),scn.y-s(7));CTX.stroke();
+CTX.beginPath();CTX.moveTo(scn.x+s(42)+_lw+s(6),scn.y-s(8));CTX.lineTo(scn.x+scn.w-s(8),scn.y-s(8));CTX.stroke();
 
-// Emoji — smaller, left-side watermark only
-var emjSz=s(36);
-CTX.font=Math.round(emjSz)+‘px serif’;CTX.textAlign=‘center’;CTX.textBaseline=‘middle’;
-CTX.globalAlpha=.13;CTX.fillText(sc.emj,scn.x+s(36),scn.y+scn.h*0.42);
-CTX.globalAlpha=.60;CTX.fillText(sc.emj,scn.x+s(35),scn.y+scn.h*0.40);
+// Emoji — left watermark
+CTX.font=Math.round(s(38))+‘px serif’;CTX.textAlign=‘center’;CTX.textBaseline=‘middle’;
+CTX.globalAlpha=.12;CTX.fillText(sc.emj,scn.x+s(34),scn.y+scn.h*0.44);
+CTX.globalAlpha=.55;CTX.fillText(sc.emj,scn.x+s(33),scn.y+scn.h*0.42);
 CTX.globalAlpha=1;
 
-// Story text — tight line height, bigger font, left-aligned with emoji gutter
-var storyFontSz = s(13);   // was 10.5 — much bigger
-var storyLH     = storyFontSz * 1.55;  // tight line height
-var storyX      = scn.x + s(72);
-var storyW      = scn.w - s(80);
-// Count non-empty lines to center the block vertically
-var activeLines = sc.lines.filter(function(l){return l!==’’;});
-var blockH      = activeLines.length * storyLH;
-var storyY      = scn.y + (scn.h - blockH) * 0.38 + storyFontSz;
+// Story text — tight, readable, bigger
+var stFontSz = s(14.5);             // BIG enough to read comfortably
+var stLH     = Math.round(stFontSz * 1.50);
+var stX      = scn.x + s(70);
+var stW      = scn.w - s(78);
+// vertical center the block
+var nonEmpty = 0;
+for(var i=0;i<sc.lines.length;i++) if(sc.lines[i]) nonEmpty++;
+var blockH = nonEmpty * stLH;
+var stY = scn.y + Math.max(s(14), (scn.h - blockH) * 0.35) + Math.round(stFontSz);
 
-CTX.font=Math.round(storyFontSz)+‘px ‘+FM;
+CTX.font=Math.round(stFontSz)+’px ’+FM;
 CTX.fillStyle=CREAM;CTX.textAlign=‘left’;CTX.textBaseline=‘alphabetic’;
-var lineIdx=0;
+var li=0;
 for(var i=0;i<sc.lines.length;i++){
-if(sc.lines[i]===’’){lineIdx++;continue;}
-CTX.fillText(sc.lines[i],storyX,storyY+lineIdx*storyLH,storyW);
-lineIdx++;
+if(!sc.lines[i]){li++;continue;}
+CTX.fillText(sc.lines[i],stX,stY+li*stLH,stW);
+li++;
 }
 
-// Wall sign — bottom strip of panel
+// Wall sign — bottom of panel
 glow(GREEN,3);
 CTX.font=’italic ’+Math.round(s(9))+’px ’+FM;
-CTX.fillStyle=‘rgba(57,255,20,.38)’;CTX.textAlign=‘center’;CTX.textBaseline=‘alphabetic’;
+CTX.fillStyle=‘rgba(57,255,20,.35)’;CTX.textAlign=‘center’;CTX.textBaseline=‘alphabetic’;
 CTX.fillText(sc.sign,SW/2,scn.y+scn.h-s(5),SW-s(20));ng();
 
 // ── Choice buttons ────────────────────────────────────────────────────
-var numSz  = s(20);   // big number
-var txtSz  = s(13);   // choice text — same as story
-var pillH  = s(18);
-var pillSz = s(10);
+var numSz = s(22);
+var txtSz = s(14.5);   // match story font exactly
+var txtLH = Math.round(txtSz*1.42);
+var pillH = s(20);
+var pillSz= s(11);
 
 for(var i=0;i<4;i++){
-var ch=sc.ch[i], cr=R.ch[i];
+var ch=sc.ch[i],cr=R.ch[i];
 
 ```
-// Background
-fillRR(cr.x,cr.y,cr.w,cr.h,s(7),'rgba(10,5,2,.96)');
+fillRR(cr.x,cr.y,cr.w,cr.h,s(7),'rgba(10,5,2,.97)');
 
-// Risk color strip — left edge
-CTX.save();CTX.fillStyle=RISK_C[ch.risk];CTX.globalAlpha=.8;
+// Risk strip left edge
+CTX.save();CTX.fillStyle=RISK_C[ch.risk];CTX.globalAlpha=.85;
 rr(cr.x,cr.y,s(6),cr.h,s(7));CTX.fill();CTX.restore();
 
-// Border
-strokeRR(cr.x,cr.y,cr.w,cr.h,s(7),'rgba(212,160,23,.25)');
+strokeRR(cr.x,cr.y,cr.w,cr.h,s(7),'rgba(212,160,23,.28)');
 
-// Number badge — top left
+// Number
 CTX.font='bold '+Math.round(numSz)+'px '+FD;
 CTX.fillStyle=GOLD;CTX.textAlign='left';CTX.textBaseline='alphabetic';
-CTX.fillText(String(i+1),cr.x+s(13),cr.y+s(26));
+CTX.fillText(String(i+1),cr.x+s(13),cr.y+s(28));
 
-// Choice text — wraps into available space between number and pill
-var availH = cr.h - s(30) - pillH - s(10);  // from below number to above pill
-var lines  = wrapTxt(ch.t, cr.w-s(24), txtSz, true);
-// Clamp lines to what fits
-var maxLines = Math.max(1, Math.floor(availH / (txtSz*1.45)));
-lines = lines.slice(0, maxLines);
-
+// Choice text
+var avail=cr.h-s(32)-pillH-s(8);
+var maxLn=Math.max(1,Math.floor(avail/txtLH));
+var lines=wrapTxt(ch.t,cr.w-s(22),txtSz).slice(0,maxLn);
 CTX.font=Math.round(txtSz)+'px '+FM;
 CTX.fillStyle=CREAM;CTX.textAlign='left';CTX.textBaseline='alphabetic';
-// Pack lines starting just below number
-var txtStartY = cr.y + s(32);
-var txtLH     = txtSz * 1.45;
-for(var li=0;li<lines.length;li++){
-  CTX.fillText(lines[li],cr.x+s(12),txtStartY+li*txtLH,cr.w-s(18));
-}
+var txtY=cr.y+s(34);
+for(var li=0;li<lines.length;li++) CTX.fillText(lines[li],cr.x+s(12),txtY+li*txtLH,cr.w-s(18));
 
-// Risk pill — pinned to bottom
-var pillY = cr.y + cr.h - pillH - s(4);
-fillRR(cr.x+s(6),pillY,cr.w-s(12),pillH,s(4),RISK_C[ch.risk]+'30');
+// Risk pill pinned to bottom
+var pillY=cr.y+cr.h-pillH-s(4);
+fillRR(cr.x+s(6),pillY,cr.w-s(12),pillH,s(4),RISK_C[ch.risk]+'32');
 CTX.font='bold '+Math.round(pillSz)+'px '+FD;
 CTX.fillStyle=RISK_C[ch.risk];CTX.textAlign='center';CTX.textBaseline='middle';
 CTX.fillText(RISK_E[ch.risk]+' '+RISK_L[ch.risk],cr.x+cr.w/2,pillY+pillH/2);
@@ -604,111 +612,145 @@ CTX.fillText(RISK_E[ch.risk]+' '+RISK_L[ch.risk],cr.x+cr.w/2,pillY+pillH/2);
 
 function drawFeedback(t){
 drawGame(t);
-CTX.fillStyle=‘rgba(0,0,0,.78)’;CTX.fillRect(0,0,SW,SH);
+CTX.fillStyle=‘rgba(0,0,0,.80)’;CTX.fillRect(0,0,SW,SH);
 
-var fd=G.fb,pw=SW-s(44),ph=s(210),px=s(22),py=SH/2-ph/2;
-fillRR(px,py,pw,ph,s(12),DARK);strokeRR(px,py,pw,ph,s(12),GOLD,1.5);
+var fd=G.fb;
+var pw=SW-s(36),ph=s(230),px=s(18),py=SH/2-ph/2;
+fillRR(px,py,pw,ph,s(14),DARK);
+strokeRR(px,py,pw,ph,s(14),GOLD,2);
 
-CTX.font=Math.round(s(44))+‘px serif’;CTX.textAlign=‘center’;CTX.textBaseline=‘middle’;
-CTX.fillText(fd.ic,SW/2,py+s(54));
+// Icon
+CTX.font=Math.round(s(48))+‘px serif’;CTX.textAlign=‘center’;CTX.textBaseline=‘middle’;
+CTX.fillText(fd.ic,SW/2,py+s(58));
 
-glow(GOLD,10);
-CTX.font=’bold ’+Math.round(s(21))+’px ’+FD;CTX.fillStyle=GOLD;CTX.textAlign=‘center’;CTX.textBaseline=‘alphabetic’;
-CTX.fillText(fd.hd,SW/2,py+s(92));ng();
+// Headline
+glow(GOLD,12);
+CTX.font=’bold ’+Math.round(s(22))+’px ’+FD;
+CTX.fillStyle=GOLD;CTX.textAlign=‘center’;CTX.textBaseline=‘alphabetic’;
+CTX.fillText(fd.hd,SW/2,py+s(102));ng();
 
-var etls=wrapTxt(fd.he,pw-s(28),s(13),true);
-CTX.font=Math.round(s(13))+’px ’+FM;CTX.fillStyle=CREAM;CTX.textAlign=‘center’;CTX.textBaseline=‘alphabetic’;
-for(var i=0;i<etls.length;i++) CTX.fillText(etls[i],SW/2,py+s(112)+i*s(20));
+// Body text
+var etls=wrapTxt(fd.he,pw-s(28),s(15));
+CTX.font=Math.round(s(15))+’px ’+FM;
+CTX.fillStyle=CREAM;CTX.textAlign=‘center’;CTX.textBaseline=‘alphabetic’;
+for(var i=0;i<etls.length;i++) CTX.fillText(etls[i],SW/2,py+s(126)+i*s(23));
 
-var chg=fd.ch,dx=px+s(14),dy=py+ph-s(19);
-CTX.font=Math.round(s(9))+‘px ‘+FD;CTX.textBaseline=‘alphabetic’;
-if(chg.pts!==0){CTX.fillStyle=chg.pts>0?GREEN:RED;CTX.textAlign=‘left’;CTX.fillText((chg.pts>0?’+’:’’)+chg.pts+’ PTS’,dx,dy);dx+=s(76);}
-if(chg.sus!==0){CTX.fillStyle=chg.sus>0?RED:GREEN;CTX.textAlign=‘left’;CTX.fillText((chg.sus>0?’+’:’’)+chg.sus+’ SUS’,dx,dy);dx+=s(66);}
+// Stat deltas
+var chg=fd.ch,dx=px+s(14),dy=py+ph-s(22);
+CTX.font=‘bold ‘+Math.round(s(11))+‘px ‘+FD;CTX.textBaseline=‘alphabetic’;
+if(chg.pts!==0){CTX.fillStyle=chg.pts>0?GREEN:RED;CTX.textAlign=‘left’;CTX.fillText((chg.pts>0?’+’:’’)+chg.pts+’ PTS’,dx,dy);dx+=s(88);}
+if(chg.sus!==0){CTX.fillStyle=chg.sus>0?RED:GREEN;CTX.textAlign=‘left’;CTX.fillText((chg.sus>0?’+’:’’)+chg.sus+’ SUS’,dx,dy);dx+=s(78);}
 if(chg.ht!==0) {CTX.fillStyle=chg.ht>0?RED:GREEN; CTX.textAlign=‘left’;CTX.fillText((chg.ht>0?’+’:’’)+chg.ht+’ HEAT’,dx,dy);}
 
-var prog=G.fbt/2.2;
-CTX.fillStyle=‘rgba(255,255,255,.07)’;CTX.fillRect(px+s(8),py+ph-s(7),pw-s(16),s(4));
-CTX.fillStyle=GOLD;CTX.fillRect(px+s(8),py+ph-s(7),(pw-s(16))*(1-prog),s(4));
+// Timer drain bar
+var prog=G.fbt/2.5;
+CTX.fillStyle=‘rgba(255,255,255,.08)’;CTX.fillRect(px+s(8),py+ph-s(9),pw-s(16),s(5));
+CTX.fillStyle=GOLD;CTX.fillRect(px+s(8),py+ph-s(9),(pw-s(16))*(1-prog),s(5));
 }
 
 function drawOver(t){
 var ed=G.end;
 CTX.fillStyle=DARK;CTX.fillRect(0,0,SW,SH);
 var g2=CTX.createRadialGradient(SW/2,SH*.3,0,SW/2,SH*.3,SW*.7);
-g2.addColorStop(0,ed.win?‘rgba(80,50,5,.55)’:‘rgba(80,8,8,.55)’);
+g2.addColorStop(0,ed.win?‘rgba(80,50,5,.6)’:‘rgba(80,8,8,.6)’);
 g2.addColorStop(1,‘rgba(0,0,0,0)’);
 CTX.fillStyle=g2;CTX.fillRect(0,0,SW,SH);
 
 if(Math.random()>.7) spawnPts(Math.random()*SW,SH+10,ed.win?GOLD:RED,2);
 
-var ctr=SW/2,y=SH*.08;
-CTX.font=Math.round(s(56))+‘px serif’;CTX.textAlign=‘center’;CTX.textBaseline=‘alphabetic’;
-CTX.fillText(ed.ic,ctr,y+s(60));y+=s(76);
+var ctr=SW/2,y=SH*0.08;
+
+CTX.font=Math.round(s(60))+‘px serif’;CTX.textAlign=‘center’;CTX.textBaseline=‘alphabetic’;
+CTX.fillText(ed.ic,ctr,y+s(64));y+=s(78);
 
 glow(ed.win?GOLD:RED,16);
-CTX.font=’bold ’+Math.round(s(28))+’px ’+FD;CTX.fillStyle=ed.win?GOLD:RED;
-CTX.textAlign=‘center’;CTX.textBaseline=‘alphabetic’;
-CTX.fillText(ed.ti,ctr,y,SW-s(20));ng();y+=s(40);
+CTX.font=’bold ’+Math.round(s(30))+’px ’+FD;
+CTX.fillStyle=ed.win?GOLD:RED;CTX.textAlign=‘center’;CTX.textBaseline=‘alphabetic’;
+CTX.fillText(ed.ti,ctr,y,SW-s(16));ng();y+=s(44);
 
-CTX.font=’bold ’+Math.round(s(14))+’px ’+FD;CTX.fillStyle=GOLD;
-CTX.fillText(’FINAL CAFE SCORE: ’+G.score,ctr,y);y+=s(22);
-if(ed.gr){CTX.font=Math.round(s(11))+’px ’+FD;CTX.fillStyle=STEAM;CTX.fillText(ed.gr,ctr,y);y+=s(22);}
+CTX.font=’bold ’+Math.round(s(17))+’px ’+FD;CTX.fillStyle=GOLD;
+CTX.fillText(’FINAL CAFE SCORE: ’+G.score,ctr,y);y+=s(26);
+if(ed.gr){
+CTX.font=Math.round(s(14))+’px ’+FD;CTX.fillStyle=STEAM;
+CTX.fillText(ed.gr,ctr,y);y+=s(26);
+}
 
-CTX.strokeStyle=‘rgba(212,160,23,.28)’;CTX.lineWidth=1;
-CTX.beginPath();CTX.moveTo(s(32),y);CTX.lineTo(SW-s(32),y);CTX.stroke();y+=s(16);
+CTX.strokeStyle=‘rgba(212,160,23,.3)’;CTX.lineWidth=1;
+CTX.beginPath();CTX.moveTo(s(30),y);CTX.lineTo(SW-s(30),y);CTX.stroke();y+=s(18);
 
-var etls=wrapTxt(ed.tx,SW-s(48),s(11),true);
-CTX.font=Math.round(s(11))+’px ’+FM;CTX.fillStyle=CREAM;
-for(var i=0;i<etls.length;i++) CTX.fillText(etls[i],ctr,y+i*s(18));
-y+=etls.length*s(18)+s(20);
+var etls=wrapTxt(ed.tx,SW-s(44),s(14));
+CTX.font=Math.round(s(14))+’px ’+FM;CTX.fillStyle=CREAM;
+for(var i=0;i<etls.length;i++) CTX.fillText(etls[i],ctr,y+i*s(22));
+y+=etls.length*s(22)+s(24);
 
-// Restart button — update hit zone Y dynamically (same as CELLTOWER approach for game-over buttons)
-var rby=Math.min(y,SH-s(108));
-var rbtn=R.restartBtn;
-// Update the hit zone to the actual rendered position
+// Restart — anchored to bottom
+var rby=R.sbY;
 for(var i=0;i<hitZones.length;i++){
-if(hitZones[i].id===‘restart’){hitZones[i].y=Math.round(rby);hitZones[i].h=Math.round(rbtn.h);break;}
+if(hitZones[i].id===‘restart’){hitZones[i].y=Math.round(rby);hitZones[i].h=R.sbH;break;}
 }
 var pulse=.82+Math.sin(t*2.5)*.18;
-CTX.globalAlpha=pulse;fillRR(rbtn.x,rby,rbtn.w,rbtn.h,s(10),RED);CTX.globalAlpha=1;
-CTX.font=’bold ’+Math.round(s(17))+’px ’+FD;CTX.fillStyle=CREAM;CTX.textAlign=‘center’;CTX.textBaseline=‘middle’;
-CTX.fillText(‘ORDER AGAIN’,rbtn.x+rbtn.w/2,rby+rbtn.h/2);
+CTX.globalAlpha=pulse;fillRR(R.sbX,rby,R.sbW,R.sbH,s(10),RED);CTX.globalAlpha=1;
+CTX.font=’bold ’+Math.round(s(20))+’px ’+FD;
+CTX.fillStyle=CREAM;CTX.textAlign=‘center’;CTX.textBaseline=‘middle’;
+CTX.fillText(‘ORDER AGAIN’,R.sbX+R.sbW/2,rby+R.sbH/2);
 }
 
-// ── Game logic ──────────────────────────────────────────────────────
+// ── Game logic ────────────────────────────────────────────────────────
 function doChoice(i){
 if(G.scr!==‘game’) return;
 var ch=SCENES[G.si].ch[i];
 G.score=Math.max(0,G.score+ch.pts);
-G.sus=Math.max(0,Math.min(100,G.sus+ch.sus));
-G.heat=Math.max(0,Math.min(100,G.heat+ch.ht));
-spawnPts(SW/2,SH*.6,RISK_C[ch.risk],14);
+G.sus  =Math.max(0,Math.min(100,G.sus+ch.sus));
+G.heat =Math.max(0,Math.min(100,G.heat+ch.ht));
+spawnPts(SW/2,SH*0.6,RISK_C[ch.risk],16);
 G.fb={ic:ch.ic,hd:ch.hd,he:ch.he,ch:{pts:ch.pts,sus:ch.sus,ht:ch.ht}};
-G.fbt=0;G.scr=‘fb’;
+G.fbt=0; G.scr=‘fb’;
+rebuildHitZones(); // fb screen has no hit zones — clears game buttons
 }
 function checkEnd(){
-if(G.sus>=100){G.end={ic:‘📞’,ti:‘LAISHA MADE A CALL’,win:false,tx:‘Someone arrived in a black Suburban in 8 minutes. You left your horchata. Best horchata of your life.’};G.scr=‘over’;return;}
-if(G.heat>=100){G.end={ic:‘🚔’,ti:‘DEA WANTS A WORD’,win:false,tx:‘New Balance 990s outside your apartment. “Just questions.” Never just questions. The torta de mole haunts your dreams.’};G.scr=‘over’;return;}
+if(G.sus>=100){
+G.end={ic:‘📞’,ti:‘LAISHA MADE A CALL’,win:false,
+tx:‘Someone arrived in a black Suburban in 8 minutes. You left your horchata unfinished. Best horchata of your life.’};
+G.scr=‘over’; rebuildHitZones(); return;
+}
+if(G.heat>=100){
+G.end={ic:‘🚔’,ti:‘DEA WANTS A WORD’,win:false,
+tx:‘New Balance 990s outside your apartment. “Just questions.” Never just questions. The torta de mole haunts your dreams.’};
+G.scr=‘over’; rebuildHitZones(); return;
+}
 if(G.si>=SCENES.length){
 var gr=G.score>=160?‘LEGENDARY CUSTOMER’:G.score>=120?‘SOLID REGULAR’:G.score>=80?‘PASSABLE HUMAN’:‘SUSPICIOUS INDIVIDUAL’;
 G.end={ic:‘☕’,ti:‘EL RINCON TE DA LAS GRACIAS’,win:true,gr:gr,
-tx:G.score>=130?‘You navigated the most complicated Tuesday of your life with grace. The horchata was a 10/10. Laisha runs a good shop.’:‘You made some choices today. Some were coffee choices. Some were others. The horchata was excellent and nothing changes that.’};
-G.scr=‘over’;
+tx:G.score>=130?‘You navigated the most complicated Tuesday of your life with grace. The horchata was a 10/10. Laisha runs a good shop.’:‘You made some choices today. Some were coffee choices. The horchata was excellent and nothing changes that.’};
+G.scr=‘over’; rebuildHitZones();
+} else {
+G.scr=‘game’; rebuildHitZones(); // back to game, restore choice buttons
 }
 }
 function resetGame(){
 G={scr:‘intro’,si:0,score:0,sus:0,heat:0,fb:null,fbt:0,end:null,t:0,lt:performance.now(),pts:[]};
+rebuildHitZones();
 }
 
-// ── MAIN DRAW — guards on !SW||!SH||!R.ready, exact CELLTOWER pattern
+// ════════════════════════════════════════════════════════════════════
+//  MAIN LOOP
+//  *** rAF is called FIRST, then guard checks layout ***
+//  This means the loop NEVER dies even if layout isn’t ready.
+//  This was the GitHub Pages black screen bug.
+// ════════════════════════════════════════════════════════════════════
 function draw(ts){
-if(!SW||!SH||!R.ready) return;  // layout not ready yet
+// ALWAYS reschedule first — loop must never die
+requestAnimationFrame(draw);
+
+// Now guard — skip drawing if layout not computed yet
+if(!SW||!SH||!R.ready) return;
+
 var dt=Math.min((ts-G.lt)/1000,.05);
 G.lt=ts;G.t+=dt;
 
 if(G.scr===‘fb’){
 G.fbt+=dt;
-if(G.fbt>=2.2){G.si++;G.scr=‘game’;checkEnd();}
+if(G.fbt>=2.5){G.si++;checkEnd();}
 }
 
 tickPts(dt);
@@ -723,12 +765,31 @@ else if(G.scr===‘over’)  drawOver(G.t);
 drawPts();
 drawGrain();
 
-requestAnimationFrame(draw);
+// Debug tap indicator — crosshair + coords, fades after 1.5s
+if(_dbgTap && (G.t - _dbgTap.t) < 1.5){
+var age=G.t-_dbgTap.t;
+var alpha=Math.max(0,1-age/1.5);
+CTX.save();
+CTX.globalAlpha=alpha;
+// Crosshair
+CTX.strokeStyle=’#ff0’;CTX.lineWidth=2;
+CTX.beginPath();CTX.moveTo(_dbgTap.x-20,_dbgTap.y);CTX.lineTo(_dbgTap.x+20,_dbgTap.y);CTX.stroke();
+CTX.beginPath();CTX.moveTo(_dbgTap.x,_dbgTap.y-20);CTX.lineTo(_dbgTap.x,_dbgTap.y+20);CTX.stroke();
+// Coords
+CTX.font=‘bold 14px monospace’;CTX.fillStyle=’#ff0’;
+CTX.textAlign=‘left’;CTX.textBaseline=‘alphabetic’;
+CTX.fillText(‘TAP ‘+Math.round(_dbgTap.x)+’,’+Math.round(_dbgTap.y),_dbgTap.x+8,_dbgTap.y-6);
+// Show hit zone that was matched
+var hitId=hitTest(_dbgTap.x,_dbgTap.y);
+CTX.fillStyle=’#0ff’;
+CTX.fillText(hitId||’(none)’,_dbgTap.x+8,_dbgTap.y+16);
+CTX.restore();
+}
 }
 
-// ── BOOT — resize() first, then rAF immediately — exact CELLTOWER
+// ── BOOT ────────────────────────────────────────────────────────────
 resize();
-G.lt = performance.now();
+G.lt=performance.now();
 requestAnimationFrame(draw);
 </script>
 
