@@ -24,26 +24,55 @@ canvas#cv{display:block;position:fixed;top:0;left:0;touch-action:none}
 </head>
 <body>
 <canvas id="cv"></canvas>
-<div id="errdiv" style="position:fixed;bottom:0;left:0;right:0;z-index:999;background:#900;color:#fff;font:bold 13px monospace;padding:8px;display:none;white-space:pre-wrap;word-break:break-all;max-height:40%;overflow-y:auto"></div>
+<div id="dbg" style="position:fixed;top:0;left:0;right:0;z-index:9999;background:rgba(0,0,0,0.92);color:#0f0;font:bold 14px 'Courier New',monospace;padding:10px;pointer-events:none;white-space:pre-wrap;word-break:break-all;line-height:1.6"></div>
 <script>
+// ── Visible debug log — always on top, independent of canvas ─────────
+var _dbgLines=[];
+var _dbgDiv=document.getElementById('dbg');
+var _frameCount=0;
+var _dbgVisible=true;
+
+function dbgLog(msg){
+_dbgLines.push(msg);
+if(_dbgLines.length>18) _dbgLines.shift();
+if(_dbgDiv) _dbgDiv.textContent=_dbgLines.join(’\n’);
+}
+
+// Auto-hide debug overlay after first successful draw frame
+function dbgHide(){
+if(_dbgDiv&&_dbgVisible){
+_dbgVisible=false;
+_dbgDiv.style.display=‘none’;
+}
+}
+
 window.onerror=function(msg,src,line,col,err){
-  var d=document.getElementById('errdiv');
-  if(d){d.style.display='block';d.textContent='ERR L'+line+': '+msg+'\n'+(err&&err.stack?err.stack:'');}
-  return false;
+dbgLog(‘JS ERR L’+line+’: ‘+msg);
+if(err&&err.stack) dbgLog(err.stack.split(’\n’)[0]);
+if(_dbgDiv) _dbgDiv.style.display=‘block’; // force show on error
+return false;
 };
-window.addEventListener('unhandledrejection',function(e){
-  var d=document.getElementById('errdiv');
-  if(d){d.style.display='block';d.textContent+='\nPromise: '+e.reason;}
+window.addEventListener(‘unhandledrejection’,function(e){
+dbgLog(’PROMISE ERR: ’+e.reason);
+if(_dbgDiv) _dbgDiv.style.display=‘block’;
 });
 
+dbgLog(‘1. SCRIPT START’);
+
 // ═══════════════════════════════════════════════════════════════════
-//  LA CHULIS — CELLTOWER canvas pattern
-//  KEY FIX: requestAnimationFrame fires BEFORE the layout guard,
-//  so the loop NEVER dies even if layout isn’t ready yet.
+//  LA CHULIS
 // ═══════════════════════════════════════════════════════════════════
 
-var cv  = document.getElementById(‘cv’);
-var CTX = cv.getContext(‘2d’);
+var cv = document.getElementById(‘cv’);
+dbgLog(’2. canvas el: ’+(cv?‘OK’:‘MISSING’));
+
+var CTX = null;
+try{
+CTX = cv.getContext(‘2d’);
+dbgLog(’3. ctx: ’+(CTX?‘OK’:‘NULL’));
+}catch(e){
+dbgLog(’3. ctx ERR: ’+e.message);
+}
 
 var SW=0, SH=0;
 
@@ -55,7 +84,9 @@ cv.width  = SW;
 cv.height = SH;
 cv.style.width  = SW+‘px’;
 cv.style.height = SH+‘px’;
+dbgLog(‘4. resize: ‘+SW+‘x’+SH);
 computeLayout();
+dbgLog(‘5. layout done. R.ready=’+R.ready+’ zones=’+hitZones.length);
 }
 window.addEventListener(‘resize’,resize);
 
@@ -283,7 +314,9 @@ cv.addEventListener(‘touchstart’,function(e){
 e.preventDefault();
 for(var i=0;i<e.changedTouches.length;i++){
 var p=getCanvasXY(e.changedTouches[i].clientX, e.changedTouches[i].clientY);
-_dbgTap={x:p.x,y:p.y,t:G.t};
+var hitId=hitTest(p.x,p.y);
+_dbgTap={x:p.x,y:p.y,t:G.t,id:hitId};
+dbgLog(‘TAP (’+Math.round(p.x)+’,’+Math.round(p.y)+’) scr=’+G.scr+’ hit=’+hitId+’ zones=’+hitZones.length);
 handleTap(p.x, p.y);
 }
 },{passive:false});
@@ -742,11 +775,23 @@ function draw(ts){
 // ALWAYS reschedule first — loop must never die
 requestAnimationFrame(draw);
 
-// Now guard — skip drawing if layout not computed yet
-if(!SW||!SH||!R.ready) return;
+_frameCount++;
+
+if(!CTX){
+if(_frameCount===1) dbgLog(‘draw: NO CTX - canvas broken’);
+return;
+}
+
+// Guard — skip drawing if layout not computed yet
+if(!SW||!SH||!R.ready){
+if(_frameCount===1)  dbgLog(‘6. frame 1: waiting for layout SW=’+SW+’ SH=’+SH+’ ready=’+R.ready);
+if(_frameCount===30) dbgLog(’   frame 30: still waiting…’);
+if(_frameCount===120)dbgLog(’   frame 120: STUCK - layout never completed’);
+return;
+}
 
 var dt=Math.min((ts-G.lt)/1000,.05);
-G.lt=ts;G.t+=dt;
+G.lt=ts; G.t+=dt;
 
 if(G.scr===‘fb’){
 G.fbt+=dt;
@@ -755,42 +800,53 @@ if(G.fbt>=2.5){G.si++;checkEnd();}
 
 tickPts(dt);
 
-CTX.fillStyle=’#000’;CTX.fillRect(0,0,SW,SH);
+try{
+CTX.fillStyle=’#000’; CTX.fillRect(0,0,SW,SH);
+}catch(e){
+dbgLog(’fillRect ERR: ’+e.message); return;
+}
 
+try{
 if     (G.scr===‘intro’) drawIntro(G.t);
 else if(G.scr===‘game’)  drawGame(G.t);
 else if(G.scr===‘fb’)    drawFeedback(G.t);
 else if(G.scr===‘over’)  drawOver(G.t);
+}catch(e){
+dbgLog(‘DRAW ERR [’+G.scr+’]: ‘+e.message);
+dbgLog(e.stack?e.stack.split(’\n’)[1]:’’);
+return;
+}
 
 drawPts();
-drawGrain();
 
-// Debug tap indicator — crosshair + coords, fades after 1.5s
-if(_dbgTap && (G.t - _dbgTap.t) < 1.5){
-var age=G.t-_dbgTap.t;
-var alpha=Math.max(0,1-age/1.5);
-CTX.save();
-CTX.globalAlpha=alpha;
-// Crosshair
-CTX.strokeStyle=’#ff0’;CTX.lineWidth=2;
-CTX.beginPath();CTX.moveTo(_dbgTap.x-20,_dbgTap.y);CTX.lineTo(_dbgTap.x+20,_dbgTap.y);CTX.stroke();
-CTX.beginPath();CTX.moveTo(_dbgTap.x,_dbgTap.y-20);CTX.lineTo(_dbgTap.x,_dbgTap.y+20);CTX.stroke();
-// Coords
-CTX.font=‘bold 14px monospace’;CTX.fillStyle=’#ff0’;
-CTX.textAlign=‘left’;CTX.textBaseline=‘alphabetic’;
-CTX.fillText(‘TAP ‘+Math.round(_dbgTap.x)+’,’+Math.round(_dbgTap.y),_dbgTap.x+8,_dbgTap.y-6);
-// Show hit zone that was matched
-var hitId=hitTest(_dbgTap.x,_dbgTap.y);
+try{ drawGrain(); }catch(e){ /* grain failing is non-fatal */ }
+
+// Debug tap indicator — crosshair shows where you tapped and what it hit
+if(_dbgTap && (G.t-_dbgTap.t) < 2.0){
+var age=G.t-_dbgTap.t, alpha=Math.max(0,1-age/2.0);
+CTX.save(); CTX.globalAlpha=alpha;
+CTX.strokeStyle=’#ff0’; CTX.lineWidth=2;
+CTX.beginPath(); CTX.moveTo(_dbgTap.x-22,_dbgTap.y); CTX.lineTo(_dbgTap.x+22,_dbgTap.y); CTX.stroke();
+CTX.beginPath(); CTX.moveTo(_dbgTap.x,_dbgTap.y-22); CTX.lineTo(_dbgTap.x,_dbgTap.y+22); CTX.stroke();
+CTX.font=‘bold 15px monospace’; CTX.textAlign=‘left’; CTX.textBaseline=‘alphabetic’;
+CTX.fillStyle=’#ff0’;
+CTX.fillText(‘TAP ‘+Math.round(_dbgTap.x)+’,’+Math.round(_dbgTap.y), Math.min(_dbgTap.x+8,SW-160), _dbgTap.y-8);
 CTX.fillStyle=’#0ff’;
-CTX.fillText(hitId||’(none)’,_dbgTap.x+8,_dbgTap.y+16);
+CTX.fillText(’HIT: ’+(_dbgTap.id||‘none’), Math.min(_dbgTap.x+8,SW-160), _dbgTap.y+18);
 CTX.restore();
 }
+
+// Hide HTML debug overlay after 5 good frames
+if(_frameCount===5) dbgHide();
 }
 
 // ── BOOT ────────────────────────────────────────────────────────────
+dbgLog(‘6. calling resize()…’);
 resize();
+dbgLog(‘7. resize done. calling rAF…’);
 G.lt=performance.now();
 requestAnimationFrame(draw);
+dbgLog(‘8. rAF scheduled. Boot complete.’);
 </script>
 
 </body>
